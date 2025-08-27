@@ -1,0 +1,21 @@
+DB:
+  PG_USER: mytube
+  PG_PASS:  mytube
+  PG_DB_NAME: mytube
+  PG_PORT:  "5432"
+  PG_HOST: localhost
+
+QUEUE:
+  REDIS_PORT: "6379"
+  REDIS_HOST: "127.0.0.1"
+  REDIS_QUEUE_NAME: video_queue
+
+S3:
+  MINIO_ACCESS_KEY: mytube
+  MINIO_SECRET_KEY: mytube123
+  MINIO_PORT: "9000"
+  MINIO_HOST: localhost
+  MINIO_BUCKET: mytube
+
+SERVER:
+  HTTP_PORT: "8080"
