@@ -6,10 +6,15 @@ import (
 	"github.com/ak-ansari/mytube/internal/models"
 )
 
+type ExtraFields struct {
+	Field string
+	Val   any
+}
+
 type VideoRepository interface {
 	InsertBasic(ctx context.Context, v models.Video) error
 	UpdateMeta(ctx context.Context, videoId string, sha string, dur int, vcodec, acodec string, w, h int) error
-	UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus) error
+	UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus, extraProperties []ExtraFields) error
 	UpdatePublish(ctx context.Context, videoId string, qualities []string, manifest string, thumbs any) error
 	Get(ctx context.Context, videoId string) (*models.Video, error)
 }

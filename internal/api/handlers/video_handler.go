@@ -37,3 +37,16 @@ func (vh *VideoHandler) UploadVideo(c *gin.Context) {
 	c.JSON(http.StatusCreated, util.NewResponse(201, "file uploaded successfully", result, nil))
 
 }
+func (vh *VideoHandler) GetVideo(c *gin.Context) {
+	id := c.Param("id")
+	ctx, cancel := context.WithTimeout(c, 120*time.Second)
+	defer cancel()
+	result, err := vh.service.GetVideo(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, util.NewResponse(201, "get video successfully", result, nil))
+
+}

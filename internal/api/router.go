@@ -11,6 +11,7 @@ func SetupRouter(service *services.VideoService) *gin.Engine {
 	vh := handlers.NewVideoHandler(service)
 
 	r.POST("/videos/upload", vh.UploadVideo)
+	r.GET("/videos/:id", vh.GetVideo)
 
 	return r
 }

@@ -37,7 +37,7 @@ func main() {
 	ffm := media.NewFFM()
 	service := services.NewVideoService(store, repo, queue, conf)
 	validate := workers.NewValidate(service, store, ffm)
-	transcode := workers.NewTranscoder(queue)
+	transcode := workers.NewTranscoder(service, store, queue, ffm)
 	segment := workers.NewSegment()
 	checksum := workers.NewChecksum()
 	publish := workers.NewPublish()

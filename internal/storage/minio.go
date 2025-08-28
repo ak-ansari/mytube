@@ -77,3 +77,13 @@ func (s3 *S3Store) GetUrl(ctx context.Context, key string) (string, error) {
 	}
 	return url.String(), nil
 }
+func (s3 *S3Store) SaveLocally(ctx context.Context, key string, path string) error {
+	return s3.client.FGetObject(ctx, s3.bucket, key, path, minio.GetObjectOptions{})
+}
+func (s3 *S3Store) UploadLocalFile(ctx context.Context, key string, path string, contentType string) (string, error) {
+	i, err := s3.client.FPutObject(ctx, s3.bucket, key, path, minio.PutObjectOptions{ContentType: contentType})
+	if err != nil {
+		return "", err
+	}
+	return i.Key, nil
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/media"
 	"github.com/ak-ansari/mytube/internal/models"
+	"github.com/ak-ansari/mytube/internal/repository"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
 )
@@ -41,9 +42,11 @@ func (c *Validate) Handle(ctx context.Context, payload jobs.JobPayload) error {
 
 	f, _, err := c.store.Get(ctx, v.OriginalObjectKey)
 	if err != nil {
+		fmt.Print("error while get file", err)
 		return err
 	}
 	temp, err := os.CreateTemp("", "video-*")
+	fmt.Println("temp path" + temp.Name())
 	if err != nil {
 		return err
 	}
@@ -87,11 +90,11 @@ func (c *Validate) Handle(ctx context.Context, payload jobs.JobPayload) error {
 		return err
 	}
 
-	if err := c.service.UpdateStatus(ctx, videoId, models.StatusValid, jobs.StepTranscode); err != nil {
+	fmt.Printf("validation finished [videoId: %s] \n", payload.VideoID)
+	if err := c.service.UpdateStatus(ctx, videoId, models.StatusValid, jobs.StepTranscode, []repository.ExtraFields{}); err != nil {
 		return err
 	}
 
-	fmt.Printf("validation finished [videoId: %s] \n", payload.VideoID)
 	return nil
 }
 

@@ -91,8 +91,8 @@ func (vs *VideoService) DownloadVideo() string {
 func (vs *VideoService) UpdateMeta(ctx context.Context, videoId string, sha string, dur int, vcodec, acodec string, w, h int) error {
 	return vs.repo.UpdateMeta(ctx, videoId, sha, dur, vcodec, acodec, w, h)
 }
-func (vs *VideoService) UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus, nextStep jobs.Step) error {
-	if err := vs.repo.UpdateStatus(ctx, videoId, status); err != nil {
+func (vs *VideoService) UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus, nextStep jobs.Step, extraProperties []repository.ExtraFields) error {
+	if err := vs.repo.UpdateStatus(ctx, videoId, status, extraProperties); err != nil {
 		return err
 	}
 	j, err := json.Marshal(jobs.JobPayload{VideoID: videoId, Step: nextStep})

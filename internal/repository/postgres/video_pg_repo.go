@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"github.com/ak-ansari/mytube/internal/models"
 	"github.com/ak-ansari/mytube/internal/repository"
@@ -32,9 +34,28 @@ func (r *VideoRepo) UpdateMeta(ctx context.Context, videoId string, sha string, 
 	return err
 }
 
-func (r *VideoRepo) UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus) error {
-	id, _ := uuid.Parse(videoId)
-	_, err := r.pool.Exec(ctx, `UPDATE videos SET status=$2, updated_at=now() WHERE id=$1`, id, status)
+func (r *VideoRepo) UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus, extraProperties []repository.ExtraFields) error {
+	id, err := uuid.Parse(videoId)
+	if err != nil {
+		return fmt.Errorf("invalid videoId: %w", err)
+	}
+
+	// Base query
+	setClauses := []string{"status=$2", "updated_at=now()"}
+	args := []any{id, status} // $1=id, $2=status
+	argPos := 3               // start from $3 since $1,$2 are taken
+
+	// Add dynamic fields
+	for _, f := range extraProperties {
+		setClauses = append(setClauses, fmt.Sprintf("%s=$%d", f.Field, argPos))
+		args = append(args, f.Val)
+		argPos++
+	}
+
+	// Final query
+	query := fmt.Sprintf("UPDATE videos SET %s WHERE id=$1", strings.Join(setClauses, ", "))
+
+	_, err = r.pool.Exec(ctx, query, args...)
 	return err
 }
 

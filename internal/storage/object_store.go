@@ -10,4 +10,6 @@ type ObjectStore interface {
 	Get(ctx context.Context, key string) (io.Reader, int64, error)
 	Delete(ctx context.Context, key string) error
 	GetUrl(ctx context.Context, key string) (string, error)
+	SaveLocally(ctx context.Context, key string, path string) error
+	UploadLocalFile(ctx context.Context, key string, path string, mediaType string) (string, error)
 }
