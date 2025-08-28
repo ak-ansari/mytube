@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
+	"time"
 
 	"github.com/ak-ansari/mytube/internal/config"
 	"github.com/minio/minio-go/v7"
@@ -50,12 +50,11 @@ func NewS3Store() (*S3Store, error) {
 }
 
 func (s3 *S3Store) Put(ctx context.Context, key string, file io.Reader, size int64) (string, error) {
-	_, err := s3.client.PutObject(ctx, s3.bucket, key, file, size, minio.PutObjectOptions{})
+	res, err := s3.client.PutObject(ctx, s3.bucket, key, file, size, minio.PutObjectOptions{})
 	if err != nil {
 		return "", err
 	}
-	u, _ := url.JoinPath(s3.publicBase, key)
-	return u, nil
+	return res.Key, nil
 }
 func (s3 *S3Store) Get(ctx context.Context, key string) (io.Reader, int64, error) {
 	obj, err := s3.client.GetObject(ctx, s3.bucket, key, minio.GetObjectOptions{})
@@ -70,4 +69,11 @@ func (s3 *S3Store) Get(ctx context.Context, key string) (io.Reader, int64, error
 }
 func (s3 *S3Store) Delete(ctx context.Context, key string) error {
 	return s3.client.RemoveObject(ctx, s3.bucket, key, minio.RemoveObjectOptions{})
+}
+func (s3 *S3Store) GetUrl(ctx context.Context, key string) (string, error) {
+	url, err := s3.client.PresignedGetObject(ctx, s3.bucket, key, 12*time.Hour, nil)
+	if err != nil {
+		return "", err
+	}
+	return url.String(), nil
 }

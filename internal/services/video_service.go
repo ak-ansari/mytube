@@ -82,9 +82,22 @@ func (vs *VideoService) UploadVideo(ctx context.Context, file *multipart.FileHea
 	}
 	return &UploadResult{VideoId: id.String(), Key: path, Sha256: sum}, nil
 }
-func (vs *VideoService) GetVideo() string {
-	return "loading video chunks"
+func (vs *VideoService) GetVideo(ctx context.Context, id string) (*models.Video, error) {
+	return vs.repo.Get(ctx, id)
 }
 func (vs *VideoService) DownloadVideo() string {
 	return "video is downloaded"
+}
+func (vs *VideoService) UpdateMeta(ctx context.Context, videoId string, sha string, dur int, vcodec, acodec string, w, h int) error {
+	return vs.repo.UpdateMeta(ctx, videoId, sha, dur, vcodec, acodec, w, h)
+}
+func (vs *VideoService) UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus, nextStep jobs.Step) error {
+	if err := vs.repo.UpdateStatus(ctx, videoId, status); err != nil {
+		return err
+	}
+	j, err := json.Marshal(jobs.JobPayload{VideoID: videoId, Step: nextStep})
+	if err != nil {
+		return err
+	}
+	return vs.queue.Enqueue(ctx, vs.queueName, j)
 }
