@@ -81,7 +81,11 @@ func (s3 *S3Store) SaveLocally(ctx context.Context, key string, path string) err
 	return s3.client.FGetObject(ctx, s3.bucket, key, path, minio.GetObjectOptions{})
 }
 func (s3 *S3Store) UploadLocalFile(ctx context.Context, key string, path string, contentType string) (string, error) {
-	i, err := s3.client.FPutObject(ctx, s3.bucket, key, path, minio.PutObjectOptions{ContentType: contentType})
+	options := minio.PutObjectOptions{}
+	if contentType != "" {
+		options.ContentType = contentType
+	}
+	i, err := s3.client.FPutObject(ctx, s3.bucket, key, path, options)
 	if err != nil {
 		return "", err
 	}

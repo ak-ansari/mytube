@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 )
 
 type FFM struct{}
@@ -52,7 +53,6 @@ func (f *FFM) TranscodeH264(ctx context.Context, inPath, outPath string, w, h in
 		"-movflags", "+faststart",
 		outPath,
 	}
-
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
 	var stderr bytes.Buffer
@@ -68,12 +68,34 @@ func (f *FFM) TranscodeH264(ctx context.Context, inPath, outPath string, w, h in
 	return nil
 }
 
-func min(vals ...int) int {
-	m := vals[0]
-	for _, v := range vals[1:] {
-		if v < m {
-			m = v
-		}
+func (f *FFM) SegmentHLS(ctx context.Context, inPath, outDir, baseName string, segmentDuration int) error {
+	if segmentDuration <= 0 {
+		segmentDuration = 4
 	}
-	return m
+	segmentPath := filepath.Join(outDir, fmt.Sprintf("%s_%%03d.ts", baseName))
+	indexFilePath := filepath.Join(outDir, fmt.Sprintf("%s.m3u8", baseName))
+	args := []string{
+		"-y", "-i", inPath,
+		"-c:v", "copy",
+		"-c:a", "copy",
+		"-start_number", "0",
+		"-hls_time", fmt.Sprintf("%d", segmentDuration),
+		"-hls_playlist_type", "vod",
+		"-hls_segment_filename", segmentPath,
+		indexFilePath,
+	}
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		errMsg := stderr.String()
+		if len(errMsg) > 500 {
+			errMsg = errMsg[:500] + "..."
+		}
+		return fmt.Errorf("ffmpeg segment failed: %w\nstderr: %s", err, errMsg)
+	}
+	return nil
 }

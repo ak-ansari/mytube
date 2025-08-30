@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"path/filepath"
@@ -100,4 +101,10 @@ func (vs *VideoService) UpdateStatus(ctx context.Context, videoId string, status
 		return err
 	}
 	return vs.queue.Enqueue(ctx, vs.queueName, j)
+}
+func (vs *VideoService) GetTranscodingPath(id string, quality string, ext string) string {
+	return filepath.Join("transcoded", id, fmt.Sprintf("%s%s", quality, ext))
+}
+func (vs *VideoService) GetHlsDir(id string) string {
+	return filepath.Join("segments", id)
 }
