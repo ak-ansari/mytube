@@ -50,3 +50,16 @@ func (vh *VideoHandler) GetVideo(c *gin.Context) {
 	c.JSON(http.StatusOK, util.NewResponse(201, "get video successfully", result, nil))
 
 }
+func (vh *VideoHandler) GetDownloadUrl(c *gin.Context) {
+	key := c.Query("key")
+	ctx, cancel := context.WithTimeout(c, 120*time.Second)
+	defer cancel()
+	result, err := vh.service.GetDownloadUrl(ctx, key)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, util.NewResponse(201, "get video successfully", result, nil))
+
+}

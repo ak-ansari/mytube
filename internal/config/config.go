@@ -21,7 +21,7 @@ type DB struct {
 	PgPort   string `yaml:"PG_PORT"`
 	PgHost   string `yaml:"PG_HOST"`
 }
-type Queue struct {
+type Redis struct {
 	RedisPort      string `yaml:"REDIS_PORT"`
 	RedisHost      string `yaml:"REDIS_HOST"`
 	RedisQueueName string `yaml:"REDIS_QUEUE_NAME"`
@@ -38,7 +38,7 @@ type Server struct {
 }
 type Config struct {
 	DB     DB     `yaml:"DB"`
-	Queue  Queue  `yaml:"QUEUE"`
+	Redis  Redis  `yaml:"REDIS"`
 	S3     S3     `yaml:"S3"`
 	Server Server `yaml:"SERVER"`
 }

@@ -4,19 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/ak-ansari/mytube/internal/models"
-	"github.com/ak-ansari/mytube/internal/repository"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type VideoRepo struct{ pool *pgxpool.Pool }
 
-func NewVideoRepo(pool *pgxpool.Pool) *VideoRepo { return &VideoRepo{pool: pool} }
-
-var _ repository.VideoRepository = (*VideoRepo)(nil)
+func NewVideoRepo(pool *pgxpool.Pool) *VideoRepo {
+	return &VideoRepo{pool: pool}
+}
 
 func (r *VideoRepo) InsertBasic(ctx context.Context, v models.Video) error {
 	_, err := r.pool.Exec(ctx, `
@@ -26,45 +24,45 @@ func (r *VideoRepo) InsertBasic(ctx context.Context, v models.Video) error {
 	return err
 }
 
-func (r *VideoRepo) UpdateMeta(ctx context.Context, videoId string, sha string, dur int, vcodec string, acodec string, w int, h int) error {
+func (r *VideoRepo) UpdateMeta(ctx context.Context, videoId string, sha string, dur int, vcodec string, acodec string, w int, h int, status models.VideoStatus) error {
 	id, _ := uuid.Parse(videoId)
 	_, err := r.pool.Exec(ctx, `
-        UPDATE videos SET sha256=$2, duration_seconds=$3, codec_video=$4, codec_audio=$5, width=$6, height=$7, updated_at=now() WHERE id=$1
-    `, id, sha, dur, vcodec, acodec, w, h)
+        UPDATE videos SET sha256=$2, duration_seconds=$3, codec_video=$4, codec_audio=$5, width=$6, height=$7, status=$8,updated_at=now() WHERE id=$1
+    `, id, sha, dur, vcodec, acodec, w, h, status)
 	return err
 }
-
-func (r *VideoRepo) UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus, extraProperties []repository.ExtraFields) error {
+func (r *VideoRepo) UpdateQualities(ctx context.Context, videoId string, qualities []string, status models.VideoStatus) error {
+	id, _ := uuid.Parse(videoId)
+	_, err := r.pool.Exec(ctx, `
+        UPDATE videos SET available_qualities=$2, status=$3, updated_at=now() WHERE id=$1
+    `, id, qualities, status)
+	return err
+}
+func (r *VideoRepo) UpdateManifest(ctx context.Context, videoId string, manifest string) error {
+	id, _ := uuid.Parse(videoId)
+	_, err := r.pool.Exec(ctx, `
+        UPDATE videos SET manifest_path=$2,updated_at=now() WHERE id=$1
+    `, id, manifest)
+	return err
+}
+func (r *VideoRepo) UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus) error {
 	id, err := uuid.Parse(videoId)
 	if err != nil {
 		return fmt.Errorf("invalid videoId: %w", err)
 	}
 
-	// Base query
-	setClauses := []string{"status=$2", "updated_at=now()"}
-	args := []any{id, status} // $1=id, $2=status
-	argPos := 3               // start from $3 since $1,$2 are taken
+	query := "UPDATE videos SET status=$2,updated_at=now() WHERE id=$1"
 
-	// Add dynamic fields
-	for _, f := range extraProperties {
-		setClauses = append(setClauses, fmt.Sprintf("%s=$%d", f.Field, argPos))
-		args = append(args, f.Val)
-		argPos++
-	}
-
-	// Final query
-	query := fmt.Sprintf("UPDATE videos SET %s WHERE id=$1", strings.Join(setClauses, ", "))
-
-	_, err = r.pool.Exec(ctx, query, args...)
+	_, err = r.pool.Exec(ctx, query, id, status)
 	return err
 }
 
-func (r *VideoRepo) UpdatePublish(ctx context.Context, videoId string, qualities []string, manifest string, thumbs any) error {
+func (r *VideoRepo) UpdatePublish(ctx context.Context, videoId string, qualities []string, manifest string, thumbs any, status models.VideoStatus) error {
 	id, _ := uuid.Parse(videoId)
 	b, _ := json.Marshal(thumbs)
 	_, err := r.pool.Exec(ctx, `
-        UPDATE videos SET status='ready', available_qualities=$2, manifest_path=$3, thumbnails=$4, updated_at=now() WHERE id=$1
-    `, id, qualities, manifest, b)
+        UPDATE videos SET status='ready', available_qualities=$2, manifest_path=$3, thumbnails=$4, status=$5, updated_at=now() WHERE id=$1
+    `, id, qualities, manifest, b, status)
 	return err
 }
 

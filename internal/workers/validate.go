@@ -11,7 +11,6 @@ import (
 	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/media"
 	"github.com/ak-ansari/mytube/internal/models"
-	"github.com/ak-ansari/mytube/internal/repository"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
 )
@@ -31,16 +30,15 @@ func NewValidate(service *services.VideoService, store storage.ObjectStore, ffm 
 }
 
 // Handle remains exported since workers will call it
-func (c *Validate) Handle(ctx context.Context, payload jobs.JobPayload) error {
-	videoId := payload.VideoID
-	fmt.Printf("validation started [videoId: %s] \n", videoId)
+func (c *Validate) Handle(ctx context.Context, p jobs.JobPayload) error {
+	fmt.Printf("validation started [videoId: %s] \n", p.VideoID)
 
-	v, err := c.service.GetVideo(ctx, videoId)
+	key, err := c.service.GetVideoKey(ctx, p.VideoID)
 	if err != nil {
 		return err
 	}
 
-	f, _, err := c.store.Get(ctx, v.OriginalObjectKey)
+	f, _, err := c.store.Get(ctx, key)
 	if err != nil {
 		fmt.Print("error while get file", err)
 		return err
@@ -86,14 +84,11 @@ func (c *Validate) Handle(ctx context.Context, payload jobs.JobPayload) error {
 		}
 	}
 
-	if err := c.service.UpdateMeta(ctx, videoId, sum, dur, vcodec, acodec, wpx, hpx); err != nil {
+	if err := c.service.UpdateMeta(ctx, p.VideoID, sum, dur, vcodec, acodec, wpx, hpx, models.StatusValid); err != nil {
 		return err
 	}
 
-	fmt.Printf("validation finished [videoId: %s] \n", payload.VideoID)
-	if err := c.service.UpdateStatus(ctx, videoId, models.StatusValid, jobs.StepTranscode, []repository.ExtraFields{}); err != nil {
-		return err
-	}
+	fmt.Printf("validation finished [videoId: %s] \n", p.VideoID)
 
 	return nil
 }

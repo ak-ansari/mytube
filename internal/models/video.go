@@ -26,7 +26,7 @@ type Video struct {
 	Width              *int        `json:"width,omitempty"`
 	Height             *int        `json:"height,omitempty"`
 	Status             VideoStatus `json:"status"`
-	AvailableQualities []string    `json:"available_qualities"`
+	AvailableQualities []string    `json:"available_qualities,omitempty"`
 	ManifestPath       *string     `json:"manifest_path,omitempty"`
 	ThumbnailsJSON     []byte      `json:"thumbnails,omitempty"`
 	CreatedAt          time.Time   `json:"created_at"`

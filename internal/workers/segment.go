@@ -8,8 +8,6 @@ import (
 
 	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/media"
-	"github.com/ak-ansari/mytube/internal/models"
-	"github.com/ak-ansari/mytube/internal/repository"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
 	"github.com/ak-ansari/mytube/internal/util"
@@ -73,7 +71,7 @@ func (s *Segment) Handle(ctx context.Context, payload jobs.JobPayload) error {
 		return err
 	}
 	fmt.Printf("manifest file uploaded at [path] %s \n\n", manifestPath)
-	if err := s.service.UpdateStatus(ctx, payload.VideoID, models.StatusProcessing, jobs.StepThumbs, []repository.ExtraFields{{Val: manifestPath, Field: "manifest_path"}}); err != nil {
+	if err := s.service.UpdateManifest(ctx, payload.VideoID, manifestPath); err != nil {
 		return err
 	}
 	fmt.Printf("segment processing finished [videoId: %s] \n\n", payload.VideoID)
@@ -82,15 +80,15 @@ func (s *Segment) Handle(ctx context.Context, payload jobs.JobPayload) error {
 func (s *Segment) createSegments(ctx context.Context, tempDir, originalName, id, quality string) error {
 	ext := filepath.Ext(originalName)
 	key := s.service.GetTranscodingPath(id, quality, ext)
-	localFilePath := filepath.Join(tempDir, fmt.Sprintf("temp%s", ext))
-	if err := s.store.SaveLocally(ctx, key, localFilePath); err != nil {
+	url, err := s.service.GetDownloadUrl(ctx, key)
+	if err != nil {
 		return err
 	}
 
-	if err := s.ffm.SegmentHLS(ctx, localFilePath, tempDir, quality, 4); err != nil {
+	if err := s.ffm.SegmentHLS(ctx, url, tempDir, quality, 4); err != nil {
 		return err
 	}
-	return os.Remove(localFilePath)
+	return nil
 
 }
 
@@ -102,7 +100,12 @@ func (s *Segment) uploadHlsFiles(ctx context.Context, quality, localDir, remoteD
 	}
 
 	for _, f := range files {
-		remotePath := filepath.Join(remoteDir, filepath.Base(f))
+		filename := filepath.Base(f)
+		ext := filepath.Ext(filename)
+		remotePath := filepath.Join(remoteDir, filename)
+		if ext != ".ts" && ext != ".m3u8" {
+			continue
+		}
 		fmt.Printf("uploading segment for [quality]: %s, [file]: %s\n\n", quality, f)
 		if _, err := s.store.UploadLocalFile(ctx, remotePath, f, ""); err != nil {
 			return err
@@ -124,6 +127,8 @@ func (s *Segment) uploadMasterPlaylist(ctx context.Context, localDir, remoteDir,
 	fmt.Printf("uploading manifest file \n")
 	key, err := s.store.UploadLocalFile(ctx, remotePath, localPath, "")
 	if err != nil {
+		fmt.Println("Failed to upload manifest file")
+		fmt.Print(err)
 		return "", err
 	}
 	return key, nil

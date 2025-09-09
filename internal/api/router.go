@@ -12,6 +12,7 @@ func SetupRouter(service *services.VideoService) *gin.Engine {
 
 	r.POST("/videos/upload", vh.UploadVideo)
 	r.GET("/videos/:id", vh.GetVideo)
+	r.GET("/videos/url", vh.GetDownloadUrl)
 
 	return r
 }
