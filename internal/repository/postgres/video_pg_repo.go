@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/ak-ansari/mytube/internal/models"
@@ -57,26 +56,23 @@ func (r *VideoRepo) UpdateStatus(ctx context.Context, videoId string, status mod
 	return err
 }
 
-func (r *VideoRepo) UpdatePublish(ctx context.Context, videoId string, qualities []string, manifest string, thumbs any, status models.VideoStatus) error {
+func (r *VideoRepo) UpdateThumbnail(ctx context.Context, videoId string, thumbnailKey string) error {
 	id, _ := uuid.Parse(videoId)
-	b, _ := json.Marshal(thumbs)
 	_, err := r.pool.Exec(ctx, `
-        UPDATE videos SET status='ready', available_qualities=$2, manifest_path=$3, thumbnails=$4, status=$5, updated_at=now() WHERE id=$1
-    `, id, qualities, manifest, b, status)
+        UPDATE videos SET thumbnail=$2, updated_at=now() WHERE id=$1
+    `, id, thumbnailKey)
 	return err
 }
 
 func (r *VideoRepo) Get(ctx context.Context, videoId string) (*models.Video, error) {
 	id, _ := uuid.Parse(videoId)
 	row := r.pool.QueryRow(ctx, `
-        SELECT id, filename, original_object_key, sha256, duration_seconds, codec_video, codec_audio, width, height, status, available_qualities, manifest_path, thumbnails, created_at, updated_at
+        SELECT id, filename, original_object_key, sha256, duration_seconds, codec_video, codec_audio, width, height, status, available_qualities, manifest_path, thumbnail, created_at, updated_at
         FROM videos WHERE id=$1
     `, id)
 	var v models.Video
-	var thumbs []byte
-	if err := row.Scan(&v.ID, &v.Filename, &v.OriginalObjectKey, &v.SHA256, &v.DurationSeconds, &v.CodecVideo, &v.CodecAudio, &v.Width, &v.Height, &v.Status, &v.AvailableQualities, &v.ManifestPath, &thumbs, &v.CreatedAt, &v.UpdatedAt); err != nil {
+	if err := row.Scan(&v.ID, &v.Filename, &v.OriginalObjectKey, &v.SHA256, &v.DurationSeconds, &v.CodecVideo, &v.CodecAudio, &v.Width, &v.Height, &v.Status, &v.AvailableQualities, &v.ManifestPath, &v.Thumbnail, &v.CreatedAt, &v.UpdatedAt); err != nil {
 		return nil, err
 	}
-	v.ThumbnailsJSON = thumbs
 	return &v, nil
 }

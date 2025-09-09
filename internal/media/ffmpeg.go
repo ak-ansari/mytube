@@ -99,3 +99,26 @@ func (f *FFM) SegmentHLS(ctx context.Context, inPath, outDir, baseName string, s
 	}
 	return nil
 }
+func (f *FFM) CreateThumbnail(ctx context.Context, inputURL string, outputPath string, timestamp int) error {
+	// Build ffmpeg command:
+	// -ss <timestamp> : seek to timestamp (e.g. 3 seconds)
+	// -i <input>      : input video
+	// -frames:v 1     : capture 1 frame
+	// -q:v 2          : quality (lower is better, 2 is good)
+	cmd := exec.CommandContext(ctx,
+		"ffmpeg",
+		"-ss", fmt.Sprintf("%d", timestamp),
+		"-i", inputURL,
+		"-frames:v", "1",
+		"-q:v", "2",
+		"-y", // overwrite output if exists
+		outputPath,
+	)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to generate thumbnail: %w\nffmpeg output: %s", err, string(out))
+	}
+
+	return nil
+}

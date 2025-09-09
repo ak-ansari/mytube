@@ -12,6 +12,6 @@ type VideoRepository interface {
 	UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus) error
 	UpdateQualities(ctx context.Context, videoId string, qualities []string, status models.VideoStatus) error
 	UpdateManifest(ctx context.Context, videoId string, manifest string) error
-	UpdatePublish(ctx context.Context, videoId string, qualities []string, manifest string, thumbs any, status models.VideoStatus) error
+	UpdateThumbnail(ctx context.Context, videoId string, thumbnailKey string) error
 	Get(ctx context.Context, videoId string) (*models.Video, error)
 }

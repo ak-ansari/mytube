@@ -47,8 +47,8 @@ func main() {
 	transcode := workers.NewTranscoder(service, store, ffm)
 	segment := workers.NewSegment(service, store, ffm)
 	checksum := workers.NewChecksum()
-	publish := workers.NewPublish()
-	thumbnail := workers.NewThumbnail()
+	publish := workers.NewPublish(service)
+	thumbnail := workers.NewThumbnail(service, ffm, store)
 	runner := workers.NewRunner(
 		queue,
 		conf.Redis.RedisQueueName,

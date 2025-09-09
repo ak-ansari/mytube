@@ -1,8 +1,9 @@
 package models
 
 import (
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type VideoStatus string
@@ -28,7 +29,7 @@ type Video struct {
 	Status             VideoStatus `json:"status"`
 	AvailableQualities []string    `json:"available_qualities,omitempty"`
 	ManifestPath       *string     `json:"manifest_path,omitempty"`
-	ThumbnailsJSON     []byte      `json:"thumbnails,omitempty"`
+	Thumbnail          *string     `json:"thumbnail,omitempty"`
 	CreatedAt          time.Time   `json:"created_at"`
 	UpdatedAt          time.Time   `json:"updated_at"`
 }

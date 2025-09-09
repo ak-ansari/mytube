@@ -130,6 +130,9 @@ func (v *VideoService) UpdateQualities(ctx context.Context, videoId string, qual
 func (v *VideoService) UpdateManifest(ctx context.Context, videoId string, manifest string) error {
 	return v.repo.UpdateManifest(ctx, videoId, manifest)
 }
+func (v *VideoService) UpdateThumbnail(ctx context.Context, videoId string, thumbnailKey string) error {
+	return v.repo.UpdateThumbnail(ctx, videoId, thumbnailKey)
+}
 func (v *VideoService) UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus) error {
 	return v.repo.UpdateStatus(ctx, videoId, status)
 }
