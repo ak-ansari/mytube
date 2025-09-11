@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ak-ansari/mytube/internal/jobs"
+	"github.com/ak-ansari/mytube/internal/pkg/logger"
 	"github.com/ak-ansari/mytube/internal/queue"
 )
 
@@ -18,16 +19,20 @@ type Runner struct {
 	checksum  *Checksum
 	publish   *Publish
 	thumbnail *Thumbnail
+	log       logger.Logger
 }
 
-func NewRunner(q queue.Queue,
+func NewRunner(
+	q queue.Queue,
 	qName string,
 	validate *Validate,
 	transcode *Transcode,
 	segment *Segment,
 	checksum *Checksum,
 	publish *Publish,
-	thumbnail *Thumbnail) *Runner {
+	thumbnail *Thumbnail,
+	log logger.Logger,
+) *Runner {
 	return &Runner{
 		q:         q,
 		qName:     qName,
@@ -37,20 +42,27 @@ func NewRunner(q queue.Queue,
 		checksum:  checksum,
 		publish:   publish,
 		thumbnail: thumbnail,
+		log:       log,
 	}
 }
 
 func (r *Runner) Start(ctx context.Context) {
 	for i := 0; i < 2; i++ {
-		go func(id int) error {
+		go func(workerID int) error {
 			for {
 				select {
 				case <-ctx.Done():
+					r.log.Info("Worker stopped",
+						logger.Int("workerID", workerID))
 					return ctx.Err()
 				default:
 				}
+
 				j, err := r.q.Dequeue(ctx, r.qName)
 				if err != nil {
+					r.log.Error("Failed to dequeue job",
+						logger.Int("workerID", workerID),
+						logger.Error(err))
 					continue
 				}
 				if j == nil {
@@ -59,18 +71,23 @@ func (r *Runner) Start(ctx context.Context) {
 
 				var payload jobs.JobPayload
 				if err := json.Unmarshal(j, &payload); err != nil {
-					fmt.Println("Error while unmarshaling the job")
+					r.log.Error("Failed to unmarshal job payload",
+						logger.Int("workerID", workerID),
+						logger.Error(err))
 					continue
 				}
-				if err := r.dispatch(ctx, payload); err != nil {
-					fmt.Printf("error in step %s for video %s \n\n\n", payload.Step, payload.VideoID)
-					fmt.Print(err)
-				}
 
+				if err := r.dispatch(ctx, payload); err != nil {
+					r.log.Error("Job handler failed",
+						logger.String("step", string(payload.Step)),
+						logger.String("videoId", payload.VideoID),
+						logger.Error(err))
+				}
 			}
 		}(i)
 	}
 }
+
 func (r *Runner) dispatch(ctx context.Context, payload jobs.JobPayload) error {
 	handler, nextStep := r.getHandler(payload.Step)
 	if handler == nil {
@@ -108,6 +125,8 @@ func (r *Runner) enqueueNext(ctx context.Context, id string, step jobs.Step) err
 	if err != nil {
 		return err
 	}
+	r.log.Info("Enqueuing next step",
+		logger.String("videoId", id),
+		logger.String("step", string(step)))
 	return r.q.Enqueue(ctx, r.qName, p)
-
 }

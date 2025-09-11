@@ -41,6 +41,7 @@ type Config struct {
 	Redis  Redis  `yaml:"REDIS"`
 	S3     S3     `yaml:"S3"`
 	Server Server `yaml:"SERVER"`
+	Env    string `yaml:"ENV"`
 }
 
 func validateConfigPath(path string) error {

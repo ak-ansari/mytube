@@ -1,3 +1,4 @@
+ENV: dev
 DB:
   PG_USER: mytube
   PG_PASS:  mytube
