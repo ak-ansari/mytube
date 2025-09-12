@@ -2,29 +2,39 @@ package workers
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/models"
+	"github.com/ak-ansari/mytube/internal/pkg/logger"
 	"github.com/ak-ansari/mytube/internal/services"
 )
 
 type Publish struct {
 	service *services.VideoService
+	log     logger.Logger
 }
 
-func NewPublish(s *services.VideoService) *Publish {
+func NewPublish(s *services.VideoService, log logger.Logger) *Publish {
 	return &Publish{
 		service: s,
+		log:     log,
 	}
 }
 
 func (p *Publish) Handle(ctx context.Context, payload jobs.JobPayload) error {
-	fmt.Printf("publish process started [videoId: %s] \n", payload.VideoID)
+	p.log.Info("Publish process started",
+		logger.String("videoId", payload.VideoID))
+
 	if err := p.service.UpdateStatus(ctx, payload.VideoID, models.StatusReady); err != nil {
+		p.log.Error("Failed to update video status",
+			logger.String("videoId", payload.VideoID),
+			logger.Error(err))
 		return err
 	}
-	// TODO notify the user that video is processed
-	fmt.Printf("🔥🔥 publish process finished [videoId: %s] 🔥🔥 \n", payload.VideoID)
+
+	// TODO: Notify the user that video is processed
+	p.log.Success("🔥 Publish process finished",
+		logger.String("videoId", payload.VideoID))
+
 	return nil
 }

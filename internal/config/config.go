@@ -29,8 +29,7 @@ type Redis struct {
 type S3 struct {
 	MinioAccessKey string `yaml:"MINIO_ACCESS_KEY"`
 	MinioSecretKey string `yaml:"MINIO_SECRET_KEY"`
-	MinioPort      string `yaml:"MINIO_PORT"`
-	MinioHost      string `yaml:"MINIO_HOST"`
+	MinioEndpoint  string `yaml:"MINIO_ENDPOINT"`
 	MinioBucket    string `yaml:"MINIO_BUCKET"`
 }
 type Server struct {
@@ -41,6 +40,7 @@ type Config struct {
 	Redis  Redis  `yaml:"REDIS"`
 	S3     S3     `yaml:"S3"`
 	Server Server `yaml:"SERVER"`
+	Env    string `yaml:"ENV"`
 }
 
 func validateConfigPath(path string) error {
