@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"time"
 
@@ -13,10 +12,9 @@ import (
 )
 
 type S3Store struct {
-	client     *minio.Client
-	bucket     string
-	publicBase string
-	log        logger.Logger // use your interface, not *zap.Logger directly
+	client *minio.Client
+	bucket string
+	log    logger.Logger // use your interface, not *zap.Logger directly
 }
 
 func NewS3Store(log logger.Logger) (*S3Store, error) {
@@ -26,9 +24,8 @@ func NewS3Store(log logger.Logger) (*S3Store, error) {
 	}
 
 	s3Conf := conf.S3
-	endpoint := fmt.Sprintf("%s:%s", s3Conf.MinioHost, s3Conf.MinioPort)
-
-	client, err := minio.New(endpoint, &minio.Options{
+	log.Info("minio endpoint ", logger.String("endpoint", s3Conf.MinioEndpoint))
+	client, err := minio.New(s3Conf.MinioEndpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(s3Conf.MinioAccessKey, s3Conf.MinioSecretKey, ""),
 		Secure: false,
 		Region: "us-est-1",
@@ -59,10 +56,9 @@ func NewS3Store(log logger.Logger) (*S3Store, error) {
 		logger.String("bucket", s3Conf.MinioBucket))
 
 	s3 := &S3Store{
-		client:     client,
-		bucket:     s3Conf.MinioBucket,
-		publicBase: fmt.Sprintf("http://%s/%s", endpoint, s3Conf.MinioBucket),
-		log:        log,
+		client: client,
+		bucket: s3Conf.MinioBucket,
+		log:    log,
 	}
 	return s3, nil
 }

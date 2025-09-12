@@ -14,8 +14,7 @@ REDIS:
 S3:
   MINIO_ACCESS_KEY: mytube
   MINIO_SECRET_KEY: mytube123
-  MINIO_PORT: "9000"
-  MINIO_HOST: localhost
+  MINIO_ENDPOINT: localhost:9002
   MINIO_BUCKET: mytube
 
 SERVER:

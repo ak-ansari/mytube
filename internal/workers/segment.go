@@ -83,8 +83,9 @@ func (s *Segment) Handle(ctx context.Context, payload jobs.JobPayload) error {
 			return err
 		}
 
-		manifest += fmt.Sprintf("#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d\n%s.m3u8\n",
-			q.Bandwidth, q.Width, q.Height, q.Label)
+		manifest += fmt.Sprintf("#EXT-X-STREAM-INF:BANDWIDTH=%d\n%s.m3u8\n",
+			q.Bandwidth, q.Label)
+
 	}
 
 	manifestPath, err := s.uploadMasterPlaylist(ctx, tempDir, remoteDir, manifest)

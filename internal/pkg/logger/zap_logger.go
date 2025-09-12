@@ -26,15 +26,6 @@ func NewZapLogger(env string) (Logger, error) {
 		fmt.Printf("Creating Dev logger \n\n")
 		cfg := zap.NewDevelopmentConfig()
 		cfg.DisableCaller = true
-		// Enable colored levels
-		cfg.EncoderConfig.EncodeLevel = func(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
-			switch l {
-			case LevelSuccess:
-				enc.AppendString(color.GreenString("SUCCESS")) // green
-			default:
-				zapcore.CapitalColorLevelEncoder(l, enc)
-			}
-		}
 		base, err = cfg.Build()
 	} else {
 		fmt.Printf("Creating Prod logger \n\n")
@@ -51,9 +42,7 @@ func (z *zapLogger) Info(msg string, fields ...Field) {
 	z.l.Info(msg, toZapFields(fields)...)
 }
 func (z *zapLogger) Success(msg string, fields ...Field) {
-	if ce := z.l.Check(LevelSuccess, color.GreenString(msg)); ce != nil {
-		ce.Write(toZapFields(fields)...)
-	}
+	z.l.Info(color.GreenString(" SUCCESS ✅" + " " + msg))
 }
 
 func (z *zapLogger) Error(msg string, fields ...Field) {

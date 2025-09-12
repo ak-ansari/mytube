@@ -29,6 +29,6 @@ func NewPool(conf *config.Config, l logger.Logger) (*pgxpool.Pool, error) {
 	if err := goose.RunContext(context.Background(), "up", db, dir); err != nil {
 		return nil, err
 	}
-	l.Success("✅ migration command executed successfully")
+	l.Success("migration command executed successfully")
 	return pgxpool.New(context.Background(), pgDns)
 }
