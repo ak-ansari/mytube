@@ -10,7 +10,6 @@ import (
 
 	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/media"
-	"github.com/ak-ansari/mytube/internal/models"
 	"github.com/ak-ansari/mytube/internal/pkg/logger"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
@@ -112,7 +111,7 @@ func (c *Validate) Handle(ctx context.Context, p jobs.JobPayload) error {
 		}
 	}
 
-	if err := c.service.UpdateMeta(ctx, p.VideoID, sum, dur, vcodec, acodec, wpx, hpx, models.StatusValid); err != nil {
+	if err := c.service.UpdateMeta(ctx, p.VideoID, sum, dur, vcodec, acodec, wpx, hpx); err != nil {
 		c.log.Error("Failed to update video metadata",
 			logger.String("videoId", p.VideoID),
 			logger.Error(err))

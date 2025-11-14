@@ -63,8 +63,12 @@ func NewS3Store(log logger.Logger) (*S3Store, error) {
 	return s3, nil
 }
 
-func (s3 *S3Store) Put(ctx context.Context, key string, file io.Reader, size int64) (string, error) {
-	res, err := s3.client.PutObject(ctx, s3.bucket, key, file, size, minio.PutObjectOptions{})
+func (s3 *S3Store) Put(ctx context.Context, fileId string, key string, file io.Reader, size int64) (string, error) {
+	metadata := make(map[string]string)
+	metadata["fileId"] = fileId
+	res, err := s3.client.PutObject(ctx, s3.bucket, key, file, size, minio.PutObjectOptions{
+		UserMetadata: metadata,
+	})
 	if err != nil {
 		s3.log.Error("Failed to put object",
 			logger.String("key", key),
@@ -76,7 +80,19 @@ func (s3 *S3Store) Put(ctx context.Context, key string, file io.Reader, size int
 		logger.Int64("size", res.Size))
 	return res.Key, nil
 }
-
+func (s3 *S3Store) GerPreSignedPutUrl(ctx context.Context, key string, size int64) (string, error) {
+	res, err := s3.client.PresignedPutObject(ctx, s3.bucket, key, 60*time.Minute)
+	if err != nil {
+		s3.log.Error("Failed to sign put object",
+			logger.String("key", key),
+			logger.Error(err))
+		return "", err
+	}
+	s3.log.Success("File upload url signed successfully",
+		logger.String("key", res.RequestURI()),
+		logger.String("size", res.Path))
+	return res.String(), nil
+}
 func (s3 *S3Store) Get(ctx context.Context, key string) (io.Reader, int64, error) {
 	obj, err := s3.client.GetObject(ctx, s3.bucket, key, minio.GetObjectOptions{})
 	if err != nil {

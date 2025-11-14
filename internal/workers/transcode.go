@@ -8,7 +8,7 @@ import (
 
 	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/media"
-	"github.com/ak-ansari/mytube/internal/models"
+	// "github.com/ak-ansari/mytube/internal/models"
 	"github.com/ak-ansari/mytube/internal/pkg/logger"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
@@ -104,7 +104,7 @@ func (c *Transcode) Handle(ctx context.Context, payload jobs.JobPayload) error {
 		availableQualities = append(availableQualities, s.Label)
 	}
 
-	if err := c.service.UpdateQualities(ctx, payload.VideoID, availableQualities, models.StatusProcessing); err != nil {
+	if err := c.service.UpdateQualities(ctx, payload.VideoID, availableQualities); err != nil {
 		c.log.Error("Failed to update qualities in DB",
 			logger.String("videoId", payload.VideoID),
 			logger.Error(err))

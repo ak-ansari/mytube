@@ -20,6 +20,8 @@ services:
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports:
       - "6379:6379"
+    expose:
+      - "6379"
     networks:
       - internal
 
@@ -28,8 +30,14 @@ services:
     container_name: minio
     command: server /data --console-address ":9001"
     environment:
+      MINIO_SERVER_URL: "http://minio:9000"
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      # The address uses the Docker service name 'redis' and default port '6379'
+      MINIO_NOTIFY_REDIS_REDIS_ADDRESS_primary: "redis:6379" 
+      MINIO_NOTIFY_REDIS_ENABLE_primary: "on" 
+      MINIO_NOTIFY_REDIS_KEY_primary: ${MINIO_REDIS_QUEUE_NAME} # The Redis key/channel
+      MINIO_NOTIFY_REDIS_FORMAT_primary: "namespace" # Use 'namespace' for a hash map or 'access' for a list/pubsub
     ports:
       - "9001:9001"
     volumes:

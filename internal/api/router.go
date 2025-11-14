@@ -1,18 +1,15 @@
 package api
 
 import (
-	"github.com/ak-ansari/mytube/internal/api/handlers"
+	"github.com/ak-ansari/mytube/internal/api/middleware"
+	"github.com/ak-ansari/mytube/internal/api/routes"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(service *services.VideoService) *gin.Engine {
+func SetupRouter(videoService *services.VideoService) *gin.Engine {
 	r := gin.Default()
-	vh := handlers.NewVideoHandler(service)
-
-	r.POST("/videos/upload", vh.UploadVideo)
-	r.GET("/videos/:id", vh.GetVideo)
-	r.GET("/videos/url", vh.GetDownloadUrl)
-
+	protected := r.Group("", middleware.AuthMiddleware())
+	routes.SetupVideoRoutes(protected, videoService)
 	return r
 }

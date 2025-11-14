@@ -5,26 +5,31 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/ak-ansari/mytube/internal/cache"
 	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/pkg/logger"
 	"github.com/ak-ansari/mytube/internal/queue"
 )
 
 type Runner struct {
-	qName     string
-	q         queue.Queue
-	validate  *Validate
-	transcode *Transcode
-	segment   *Segment
-	checksum  *Checksum
-	publish   *Publish
-	thumbnail *Thumbnail
-	log       logger.Logger
+	qName           string
+	bucketEventName string
+	q               queue.Queue
+	cache           cache.Cache
+	validate        *Validate
+	transcode       *Transcode
+	segment         *Segment
+	checksum        *Checksum
+	publish         *Publish
+	thumbnail       *Thumbnail
+	log             logger.Logger
 }
 
 func NewRunner(
 	q queue.Queue,
+	cache cache.Cache,
 	qName string,
+	bucketEventName string,
 	validate *Validate,
 	transcode *Transcode,
 	segment *Segment,
@@ -34,15 +39,17 @@ func NewRunner(
 	log logger.Logger,
 ) *Runner {
 	return &Runner{
-		q:         q,
-		qName:     qName,
-		validate:  validate,
-		transcode: transcode,
-		segment:   segment,
-		checksum:  checksum,
-		publish:   publish,
-		thumbnail: thumbnail,
-		log:       log,
+		q:               q,
+		qName:           qName,
+		bucketEventName: bucketEventName,
+		validate:        validate,
+		transcode:       transcode,
+		segment:         segment,
+		checksum:        checksum,
+		publish:         publish,
+		thumbnail:       thumbnail,
+		log:             log,
+		cache:           cache,
 	}
 }
 
@@ -57,7 +64,10 @@ func (r *Runner) Start(ctx context.Context) {
 					return ctx.Err()
 				default:
 				}
-
+				// uploaded, err := r.cache.GetAllFromHash(ctx, r.bucketEventName)
+				// if err != nil {
+				// 	r.log.Error(fmt.Sprintf("Failed to read events from bucket event hash %w", err.Error()))
+				// }
 				j, err := r.q.Dequeue(ctx, r.qName)
 				if err != nil {
 					r.log.Error("Failed to dequeue job",

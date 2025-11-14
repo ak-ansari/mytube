@@ -51,8 +51,9 @@ func main() {
 	}
 
 	// Repository + Service
-	repo := postgres.NewVideoRepo(dbPool)
-	service := services.NewVideoService(objStore, repo, queue, cache, conf.Redis.RedisQueueName)
+	videoMetadataRepo := postgres.NewVideoMetadataRepo(dbPool)
+	videoRepo := postgres.NewVideoRepo(dbPool)
+	service := services.NewVideoService(objStore, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName)
 
 	// Setup router
 	r := api.SetupRouter(service)

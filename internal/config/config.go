@@ -27,10 +27,11 @@ type Redis struct {
 	RedisQueueName string `yaml:"REDIS_QUEUE_NAME"`
 }
 type S3 struct {
-	MinioAccessKey string `yaml:"MINIO_ACCESS_KEY"`
-	MinioSecretKey string `yaml:"MINIO_SECRET_KEY"`
-	MinioEndpoint  string `yaml:"MINIO_ENDPOINT"`
-	MinioBucket    string `yaml:"MINIO_BUCKET"`
+	MinioAccessKey      string `yaml:"MINIO_ACCESS_KEY"`
+	MinioSecretKey      string `yaml:"MINIO_SECRET_KEY"`
+	MinioEndpoint       string `yaml:"MINIO_ENDPOINT"`
+	MinioBucket         string `yaml:"MINIO_BUCKET"`
+	MinioRedisQueueName string `yaml:"MINIO_REDIS_QUEUE_NAME"`
 }
 type Server struct {
 	HttpPort string `yaml:"HTTP_PORT"`

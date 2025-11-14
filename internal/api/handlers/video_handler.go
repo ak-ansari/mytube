@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ak-ansari/mytube/internal/api/dto"
+	"github.com/ak-ansari/mytube/internal/models"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/util"
 	"github.com/gin-gonic/gin"
@@ -20,21 +22,53 @@ func NewVideoHandler(service *services.VideoService) *VideoHandler {
 	}
 	return vh
 }
-func (vh *VideoHandler) UploadVideo(c *gin.Context) {
-	file, err := c.FormFile("file")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
+
+// func (vh *VideoHandler) UploadVideo(c *gin.Context) {
+// 	file, err := c.FormFile("file")
+// 	if err != nil {
+// 		c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
+// 		return
+// 	}
+// 	ctx, cancel := context.WithTimeout(c, 120*time.Second)
+// 	defer cancel()
+// 	result, err := vh.service.UploadVideo(ctx, file)
+// 	if err != nil {
+// 		c.JSON(http.StatusInternalServerError, err.Error())
+// 		return
+// 	}
+
+// 	c.JSON(http.StatusCreated, util.NewResponse(201, "file uploaded successfully", result, nil))
+
+// }
+func (vh *VideoHandler) UploadPreSign(c *gin.Context) {
+	var vd dto.UploadVideoDto
+	if err := c.ShouldBindBodyWithJSON(&vd); err != nil {
+		c.JSON(http.StatusBadRequest, util.NewResponse(http.StatusBadRequest, "Bad request", nil, err))
+		return
+	}
+	if vd.Size == 0 || vd.Filename == "" {
+		c.JSON(http.StatusBadRequest, util.NewResponse(http.StatusBadRequest, "Bad request all required fields should be present", nil, nil))
 		return
 	}
 	ctx, cancel := context.WithTimeout(c, 120*time.Second)
 	defer cancel()
-	result, err := vh.service.UploadVideo(ctx, file)
+
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, util.NewResponse(http.StatusUnauthorized, "Unauthorized", nil, nil))
+	}
+	u, ok := user.(*models.User)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, util.NewResponse(http.StatusUnauthorized, "Unauthorized", nil, nil))
+		return
+	}
+	url, err := vh.service.UploadPreSign(ctx, &vd, u)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusCreated, util.NewResponse(201, "file uploaded successfully", result, nil))
+	c.JSON(http.StatusCreated, util.NewResponse(201, "file uploaded successfully", url, nil))
 
 }
 func (vh *VideoHandler) GetVideo(c *gin.Context) {

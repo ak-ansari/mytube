@@ -54,8 +54,9 @@ func main() {
 
 	// --- Media + Services ---
 	ffm := media.NewFFM()
-	repo := postgres.NewVideoRepo(pool)
-	service := services.NewVideoService(store, repo, queue, cache, conf.Redis.RedisQueueName)
+	videoMetadataRepo := postgres.NewVideoMetadataRepo(pool)
+	videoRepo := postgres.NewVideoRepo(pool)
+	service := services.NewVideoService(store, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName)
 
 	// --- Workers ---
 	validate := workers.NewValidate(service, store, ffm, log)
@@ -67,7 +68,9 @@ func main() {
 
 	runner := workers.NewRunner(
 		queue,
+		cache,
 		conf.Redis.RedisQueueName,
+		conf.S3.MinioRedisQueueName,
 		validate,
 		transcode,
 		segment,

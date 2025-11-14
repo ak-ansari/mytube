@@ -21,4 +21,6 @@ type Cache interface {
 	Get(ctx context.Context, key string, target any) error
 	Delete(ctx context.Context, key string) error
 	Exists(ctx context.Context, key string) (bool, error)
+	GetAllFromHash(ctx context.Context, hash string) (map[string]string, error)
+	GetFromHash(ctx context.Context, hash string, key string) (string, error)
 }

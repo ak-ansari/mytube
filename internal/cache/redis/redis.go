@@ -45,3 +45,23 @@ func (c *redisCache) Exists(ctx context.Context, key string) (bool, error) {
 	n, err := c.client.Exists(ctx, key).Result()
 	return n > 0, err
 }
+func (c *redisCache) GetFromHash(ctx context.Context, hash string, key string) (string, error) {
+	result, err := c.client.HGet(ctx, hash, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return "", nil
+		}
+		return "", err
+	}
+	return result, nil
+}
+func (c *redisCache) GetAllFromHash(ctx context.Context, hash string) (map[string]string, error) {
+	result, err := c.client.HGetAll(ctx, hash).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return make(map[string]string), nil
+		}
+		return nil, err
+	}
+	return result, nil
+}
