@@ -5,6 +5,13 @@ import (
 	"io"
 )
 
+const (
+	DirectoryOriginals  string = "originals"
+	DirectoryThumbnails string = "thumbnails"
+	DirectoryTranscoded string = "transcoded"
+	DirectorySegments   string = "segments"
+)
+
 type ObjectStore interface {
 	Put(ctx context.Context, fileId string, key string, file io.Reader, size int64) (string, error)
 	GerPreSignedPutUrl(ctx context.Context, key string, size int64) (string, error)

@@ -65,12 +65,13 @@ func main() {
 	checksum := workers.NewChecksum(log)
 	publish := workers.NewPublish(service, log)
 	thumbnail := workers.NewThumbnail(service, ffm, store, log)
-
+	bucketEventProcessor := workers.NewBucketEventProcessor(service, log)
 	runner := workers.NewRunner(
 		queue,
 		cache,
 		conf.Redis.RedisQueueName,
 		conf.S3.MinioRedisQueueName,
+		bucketEventProcessor,
 		validate,
 		transcode,
 		segment,

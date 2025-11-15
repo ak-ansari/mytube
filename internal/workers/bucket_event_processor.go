@@ -3,8 +3,12 @@ package workers
 import (
 	"context"
 	"encoding/json"
+	"net/url"
+	"strings"
 
 	"github.com/ak-ansari/mytube/internal/pkg/logger"
+	"github.com/ak-ansari/mytube/internal/services"
+	"github.com/ak-ansari/mytube/internal/storage"
 )
 
 type EventRecord struct {
@@ -56,30 +60,37 @@ type EventRecord struct {
 		} `json:"source"`
 	} `json:"Records"`
 }
-
-type preProcessor struct {
-	log logger.Logger
+type bucketEventProcessor struct {
+	service *services.VideoService
+	log     logger.Logger
 }
 
-func NewPreProcessor(log logger.Logger) *preProcessor {
-	return &preProcessor{
-		log: log,
+func NewBucketEventProcessor(s *services.VideoService, log logger.Logger) *bucketEventProcessor {
+	return &bucketEventProcessor{service: s, log: log}
+}
+func (bp *bucketEventProcessor) getParsed(ctx context.Context, rawData string) (*EventRecord, error) {
+	var payload EventRecord
+	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
+		bp.log.Error("Failed to unmarshal event payload", logger.Error(err))
+		return nil, err
 	}
+	return &payload, nil
 }
-
-func (p *preProcessor) Process(ctx context.Context, events map[string]string) {
-	for key := range events {
-		data := events[key]
-		var payload EventRecord
-		if err := json.Unmarshal([]byte(data), &payload); err != nil {
-			p.log.Error("Failed to unmarshal event payload",
-				logger.Error(err))
-			continue
-		}
-		go p.processData(&payload)
+func (bp *bucketEventProcessor) Process(ctx context.Context, data string) (string, bool, error) {
+	result, err := bp.getParsed(ctx, data)
+	if err != nil {
+		return "", false, err
 	}
-}
-
-func (p *preProcessor) processData(data *EventRecord) {
-
+	key, err := url.QueryUnescape(result.Records[0].S3.Object.Key)
+	if !strings.HasPrefix(key, storage.DirectoryOriginals) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	id, err := bp.service.GetVideoByKey(ctx, key)
+	if err != nil {
+		return "", false, err
+	}
+	return id, true, nil
 }

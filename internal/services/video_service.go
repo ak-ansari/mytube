@@ -106,7 +106,7 @@ func (v *VideoService) GetVideoKey(ctx context.Context, id string) (string, erro
 func (v *VideoService) UploadPreSign(ctx context.Context, videoDto *dto.UploadVideoDto, user *models.User) (*UploadResult, error) {
 	id := uuid.New()
 	ext := filepath.Ext(videoDto.Filename)
-	key := filepath.Join("originals", id.String(), "original"+ext)
+	key := filepath.Join(storage.DirectoryOriginals, id.String(), "original"+ext)
 
 	// save meta in db
 	vm := &models.VideoMetadata{
@@ -134,7 +134,7 @@ func (v *VideoService) UploadPreSign(ctx context.Context, videoDto *dto.UploadVi
 		return nil, err
 	}
 	cacheKey := cache.GetKey(cache.KEY, key)
-	if err := v.cache.Set(ctx, cacheKey, key, 24*time.Hour); err != nil {
+	if err := v.cache.Set(ctx, cacheKey, id.String(), 24*time.Hour); err != nil {
 		return nil, err
 	}
 	return &UploadResult{VideoId: id.String(), Key: key, Url: url}, nil
@@ -153,6 +153,19 @@ func (v *VideoService) GetDownloadUrl(ctx context.Context, key string) (string, 
 		return "", err
 	}
 	return u, v.cache.Set(ctx, cacheKey, u, 24*time.Hour)
+}
+func (v *VideoService) GetVideoByKey(ctx context.Context, key string) (string, error) {
+	cacheKey := cache.GetKey(cache.KEY, key)
+	var cached string
+	if err := v.cache.Get(ctx, cacheKey, &cached); err == nil && cached != "" {
+		return cached, nil
+	}
+	id, err := v.videoMetadataRepo.GetByKey(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+
 }
 func (v *VideoService) DownloadVideo() string {
 	return "video is downloaded"
@@ -174,10 +187,10 @@ func (v *VideoService) UpdateThumbnail(ctx context.Context, videoId string, thum
 //		return v.videoMetadataRepo.UpdateStatus(ctx, videoId)
 //	}
 func (v *VideoService) GetTranscodingPath(id string, quality string, ext string) string {
-	return filepath.Join("transcoded", id, fmt.Sprintf("%s%s", quality, ext))
+	return filepath.Join(storage.DirectoryTranscoded, id, fmt.Sprintf("%s%s", quality, ext))
 }
 func (v *VideoService) GetHlsDir(id string) string {
-	return filepath.Join("segments", id)
+	return filepath.Join(storage.DirectorySegments, id)
 }
 func (v *VideoService) CalculateChecksum(f io.Reader) (string, error) {
 	hash := sha256.New()

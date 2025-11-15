@@ -21,7 +21,7 @@ func NewPublish(s *services.VideoService, log logger.Logger) *Publish {
 	}
 }
 
-func (p *Publish) Handle(ctx context.Context, payload jobs.JobPayload) error {
+func (p *Publish) Handle(ctx context.Context, payload *jobs.JobPayload) error {
 	p.log.Info("Publish process started",
 		logger.String("videoId", payload.VideoID))
 

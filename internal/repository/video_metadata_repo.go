@@ -13,4 +13,5 @@ type VideoMetadataRepository interface {
 	UpdateManifest(ctx context.Context, videoId string, manifest string) error
 	UpdateThumbnail(ctx context.Context, videoId string, thumbnailKey string) error
 	Get(ctx context.Context, videoId string) (*models.VideoMetadata, error)
+	GetByKey(ctx context.Context, key string) (string, error)
 }

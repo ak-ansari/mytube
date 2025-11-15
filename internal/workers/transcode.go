@@ -31,7 +31,7 @@ func NewTranscoder(service *services.VideoService, store storage.ObjectStore, ff
 	}
 }
 
-func (c *Transcode) Handle(ctx context.Context, payload jobs.JobPayload) error {
+func (c *Transcode) Handle(ctx context.Context, payload *jobs.JobPayload) error {
 	c.log.Info("Transcoding started",
 		logger.String("videoId", payload.VideoID))
 

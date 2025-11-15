@@ -30,7 +30,7 @@ func NewSegment(service *services.VideoService, store storage.ObjectStore, ffm *
 	}
 }
 
-func (s *Segment) Handle(ctx context.Context, payload jobs.JobPayload) error {
+func (s *Segment) Handle(ctx context.Context, payload *jobs.JobPayload) error {
 	s.log.Info("Segment processing started",
 		logger.String("videoId", payload.VideoID))
 

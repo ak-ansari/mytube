@@ -65,3 +65,27 @@ func (c *redisCache) GetAllFromHash(ctx context.Context, hash string) (map[strin
 	}
 	return result, nil
 }
+func (c *redisCache) DeleteFromHash(ctx context.Context, hash string, key string) error {
+	_, err := c.client.HDel(ctx, hash, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// SetNX sets a key only if it does not already exist
+func (c *redisCache) SetNX(ctx context.Context, key string, value any, expiration time.Duration) (bool, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return false, err
+	}
+
+	return c.client.SetNX(ctx, key, data, expiration).Result()
+}
+
+func (c *redisCache) DeleteLock(ctx context.Context, key string) error {
+	return c.client.Del(ctx, key).Err()
+}

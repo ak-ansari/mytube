@@ -32,7 +32,7 @@ func NewValidate(service *services.VideoService, store storage.ObjectStore, ffm 
 }
 
 // Handle validates a video file
-func (c *Validate) Handle(ctx context.Context, p jobs.JobPayload) error {
+func (c *Validate) Handle(ctx context.Context, p *jobs.JobPayload) error {
 	c.log.Info("Validation started",
 		logger.String("videoId", p.VideoID))
 

@@ -28,7 +28,7 @@ func NewThumbnail(s *services.VideoService, ffm *media.FFM, store storage.Object
 	}
 }
 
-func (t *Thumbnail) Handle(ctx context.Context, payload jobs.JobPayload) error {
+func (t *Thumbnail) Handle(ctx context.Context, payload *jobs.JobPayload) error {
 	t.log.Info("Creating thumbnail",
 		logger.String("videoId", payload.VideoID))
 
@@ -71,7 +71,7 @@ func (t *Thumbnail) Handle(ctx context.Context, payload jobs.JobPayload) error {
 		logger.String("videoId", payload.VideoID),
 		logger.String("file", outPath))
 
-	remotePath := filepath.Join("thumbnails", payload.VideoID, filename)
+	remotePath := filepath.Join(string(storage.DirectoryThumbnails), payload.VideoID, filename)
 	t.log.Info("Uploading thumbnail",
 		logger.String("videoId", payload.VideoID),
 		logger.String("remotePath", remotePath))
