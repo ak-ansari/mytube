@@ -71,6 +71,22 @@ func (vh *VideoHandler) UploadPreSign(c *gin.Context) {
 	c.JSON(http.StatusCreated, util.NewResponse(201, "file uploaded successfully", url, nil))
 
 }
+func (vh *VideoHandler) ConfirmVideo(c *gin.Context) {
+	var videoConfirmDto dto.VideoConfirmDto
+	id := c.Param("id")
+	if err := c.ShouldBindBodyWithJSON(&videoConfirmDto); err != nil {
+		c.JSON(http.StatusBadRequest, util.NewResponse(http.StatusBadRequest, "Bad request", nil, err))
+		return
+	}
+	ctx, cancel := context.WithTimeout(c, 120*time.Second)
+	defer cancel()
+	vm, err := vh.service.ConfirmVideo(ctx, id, videoConfirmDto)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, util.NewResponse(http.StatusBadRequest, "Bad request", nil, err))
+		return
+	}
+	c.JSON(http.StatusOK, util.NewResponse(http.StatusOK, "Video is successfully saved", vm, nil))
+}
 func (vh *VideoHandler) GetVideo(c *gin.Context) {
 	id := c.Param("id")
 	ctx, cancel := context.WithTimeout(c, 120*time.Second)

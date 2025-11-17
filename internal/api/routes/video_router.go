@@ -13,6 +13,7 @@ func SetupVideoRoutes(r *gin.RouterGroup, s *services.VideoService) {
 		// vr.POST("/videos/upload", vh.UploadVideo)
 		vr.GET("/:id", vh.GetVideo)
 		vr.POST("/upload/presign", vh.UploadPreSign)
+		vr.POST("/:id/confirm", vh.ConfirmVideo)
 		vr.GET("/url", vh.GetDownloadUrl)
 	}
 }

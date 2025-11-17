@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/ak-ansari/mytube/internal/api/dto"
 	"github.com/ak-ansari/mytube/internal/cache"
+	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/models"
 	"github.com/ak-ansari/mytube/internal/queue"
 	"github.com/ak-ansari/mytube/internal/repository"
@@ -20,6 +22,7 @@ import (
 )
 
 type UploadResult struct {
+	ID      string `json:"id"`
 	VideoId string `json:"videoId"`
 	Key     string `json:"key"`
 	Sha256  string `json:"sha256"`
@@ -137,10 +140,37 @@ func (v *VideoService) UploadPreSign(ctx context.Context, videoDto *dto.UploadVi
 	if err := v.cache.Set(ctx, cacheKey, id.String(), 24*time.Hour); err != nil {
 		return nil, err
 	}
-	return &UploadResult{VideoId: id.String(), Key: key, Url: url}, nil
+	return &UploadResult{VideoId: id.String(), Key: key, Url: url, ID: video.ID.String()}, nil
 }
 func (v *VideoService) GetVideo(ctx context.Context, id string) (*models.VideoMetadata, error) {
 	return v.videoMetadataRepo.Get(ctx, id)
+}
+func (v *VideoService) ConfirmVideo(ctx context.Context, id string, dto dto.VideoConfirmDto) (*models.Video, error) {
+	parsedId, _ := uuid.Parse(id)
+	vm := &models.Video{
+		ID:          parsedId,
+		Thumbnail:   &dto.Thumbnail,
+		Description: &dto.Description,
+		Visibility:  &dto.Visibility,
+		Status:      models.StatusUploaded,
+		Title:       &dto.Title,
+	}
+	if err := v.videoRepo.UpdateVideo(ctx, vm); err != nil {
+		return nil, err
+	}
+	vm, err := v.videoRepo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(jobs.JobPayload{VideoID: vm.VideoId.String(), Step: jobs.StepTranscode})
+	if err != nil {
+		return nil, err
+	}
+	if err := v.queue.Enqueue(ctx, v.queueName, payload); err != nil {
+		return nil, err
+	}
+	return vm, nil
+
 }
 func (v *VideoService) GetDownloadUrl(ctx context.Context, key string) (string, error) {
 	cacheKey := cache.GetKey(cache.URL, key)
