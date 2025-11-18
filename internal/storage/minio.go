@@ -2,7 +2,10 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/ak-ansari/mytube/internal/config"
@@ -10,6 +13,56 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
+
+type EventRecord struct {
+	Records []struct {
+		EventVersion string `json:"eventVersion"`
+		EventSource  string `json:"eventSource"`
+		AWSRegion    string `json:"awsRegion"`
+		EventTime    string `json:"eventTime"`
+		EventName    string `json:"eventName"`
+		UserIdentity struct {
+			PrincipalID string `json:"principalId"`
+		} `json:"userIdentity"`
+		RequestParameters struct {
+			PrincipalID string `json:"principalId"`
+			Region      string `json:"region"`
+			SourceIP    string `json:"sourceIPAddress"`
+		} `json:"requestParameters"`
+		ResponseElements struct {
+			XAmzID2              string `json:"x-amz-id-2"`
+			XAmzRequestID        string `json:"x-amz-request-id"`
+			XMinioDeploymentID   string `json:"x-minio-deployment-id"`
+			XMinioOriginEndpoint string `json:"x-minio-origin-endpoint"`
+		} `json:"responseElements"`
+		S3 struct {
+			S3SchemaVersion string `json:"s3SchemaVersion"`
+			ConfigurationID string `json:"configurationId"`
+			Bucket          struct {
+				Name          string `json:"name"`
+				OwnerIdentity struct {
+					PrincipalID string `json:"principalId"`
+				} `json:"ownerIdentity"`
+				ARN string `json:"arn"`
+			} `json:"bucket"`
+			Object struct {
+				Key          string `json:"key"`
+				Size         int64  `json:"size"`
+				ETag         string `json:"eTag"`
+				ContentType  string `json:"contentType"`
+				UserMetadata struct {
+					ContentType string `json:"content-type"`
+				} `json:"userMetadata"`
+				Sequencer string `json:"sequencer"`
+			} `json:"object"`
+		} `json:"s3"`
+		Source struct {
+			Host      string `json:"host"`
+			Port      string `json:"port"`
+			UserAgent string `json:"userAgent"`
+		} `json:"source"`
+	} `json:"Records"`
+}
 
 type S3Store struct {
 	client *minio.Client
@@ -173,4 +226,32 @@ func (s3 *S3Store) UploadLocalFile(ctx context.Context, key string, path string,
 		logger.String("key", i.Key),
 		logger.Int64("size", i.Size))
 	return i.Key, nil
+}
+func (s3 *S3Store) ParseBucketEvent(rawData string) (*BucketEvent, error) {
+	var payload EventRecord
+	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
+		s3.log.Error("Failed to unmarshal event payload", logger.Error(err))
+		return nil, err
+	}
+	key, err := url.QueryUnescape(payload.Records[0].S3.Object.Key)
+	if err != nil {
+		return nil, err
+	}
+	event := s3.GetEventName(payload.Records[0].EventName)
+	return &BucketEvent{
+		Event:       event,
+		ObjectKey:   key,
+		Etag:        payload.Records[0].S3.Object.ETag,
+		Size:        payload.Records[0].S3.Object.Size,
+		ContentType: payload.Records[0].S3.Object.ContentType,
+		Bucket:      payload.Records[0].S3.Bucket.Name,
+	}, nil
+}
+func (s3 *S3Store) GetEventName(minioEvent string) BucketEventType {
+	if strings.HasPrefix(minioEvent, "s3:ObjectCreated") {
+		return BucketEventCreated
+	} else if strings.HasPrefix(minioEvent, "s3:ObjectRemoved") {
+		return BucketEventDeleted
+	}
+	return ""
 }

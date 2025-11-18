@@ -5,12 +5,25 @@ import (
 	"io"
 )
 
+type BucketEventType = string
+
 const (
-	DirectoryOriginals  string = "originals"
-	DirectoryThumbnails string = "thumbnails"
-	DirectoryTranscoded string = "transcoded"
-	DirectorySegments   string = "segments"
+	DirectoryOriginals  string          = "originals"
+	DirectoryThumbnails string          = "thumbnails"
+	DirectoryTranscoded string          = "transcoded"
+	DirectorySegments   string          = "segments"
+	BucketEventCreated  BucketEventType = "created"
+	BucketEventDeleted  BucketEventType = "deleted"
 )
+
+type BucketEvent struct {
+	Event       BucketEventType
+	ObjectKey   string
+	Etag        string
+	Size        int64
+	ContentType string
+	Bucket      string
+}
 
 type ObjectStore interface {
 	Put(ctx context.Context, fileId string, key string, file io.Reader, size int64) (string, error)
@@ -20,4 +33,5 @@ type ObjectStore interface {
 	GetUrl(ctx context.Context, key string) (string, error)
 	SaveLocally(ctx context.Context, key string, path string) error
 	UploadLocalFile(ctx context.Context, key string, path string, mediaType string) (string, error)
+	ParseBucketEvent(rawData string) (*BucketEvent, error)
 }

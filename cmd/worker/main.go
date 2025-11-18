@@ -65,7 +65,7 @@ func main() {
 	checksum := workers.NewChecksum(log)
 	publish := workers.NewPublish(service, log)
 	thumbnail := workers.NewThumbnail(service, ffm, store, log)
-	bucketEventProcessor := workers.NewBucketEventProcessor(service, log)
+	bucketEventProcessor := workers.NewBucketEventProcessor(service, log, store)
 	runner := workers.NewRunner(
 		queue,
 		cache,

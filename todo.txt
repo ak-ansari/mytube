@@ -1,0 +1,4 @@
+1. validation in confirm video part
+2. Save thumbnail in video repo
+3. review the flow
+4. cron to clear draft files after 4 days if no activity
