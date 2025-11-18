@@ -109,6 +109,9 @@ func (v *VideoService) GetVideoKey(ctx context.Context, id string) (string, erro
 func (v *VideoService) UploadPreSign(ctx context.Context, videoDto *dto.UploadVideoDto, user *models.User) (*UploadResult, error) {
 	id := uuid.New()
 	ext := filepath.Ext(videoDto.Filename)
+	if ext == "" {
+		return nil, fmt.Errorf("filename should be provided with valid extension.filename:%s", videoDto.Filename)
+	}
 	key := filepath.Join(storage.DirectoryOriginals, id.String(), "original"+ext)
 
 	// save meta in db

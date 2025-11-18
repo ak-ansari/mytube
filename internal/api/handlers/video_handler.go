@@ -46,10 +46,6 @@ func (vh *VideoHandler) UploadPreSign(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, util.NewResponse(http.StatusBadRequest, "Bad request", nil, err))
 		return
 	}
-	if vd.Size == 0 || vd.Filename == "" {
-		c.JSON(http.StatusBadRequest, util.NewResponse(http.StatusBadRequest, "Bad request all required fields should be present", nil, nil))
-		return
-	}
 	ctx, cancel := context.WithTimeout(c, 120*time.Second)
 	defer cancel()
 

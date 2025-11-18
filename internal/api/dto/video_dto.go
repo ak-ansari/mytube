@@ -3,13 +3,13 @@ package dto
 import "github.com/ak-ansari/mytube/internal/models"
 
 type UploadVideoDto struct {
-	Size     int64  `json:"size"`
-	Filename string `json:"file_name"`
+	Size     int64  `json:"size" validate:"required,gt=0"`
+	Filename string `json:"file_name" validate:"required,min=3"`
 }
 
 type VideoConfirmDto struct {
-	Thumbnail   string                 `json:"thumbnail"`             // address to video thumbnail file
-	Title       string                 `json:"title"`                 // title of the video
-	Description string                 `json:"description,omitempty"` // description about video
-	Visibility  models.VideoVisibility `json:"visibility"`            // "public", "private", "unlisted"
+	Thumbnail   string                 `json:"thumbnail" validate:"required,min=3"`                          // address to video thumbnail file
+	Title       string                 `json:"title" validate:"required,min=3"`                              // title of the video
+	Description string                 `json:"description,omitempty"`                                        // description about video
+	Visibility  models.VideoVisibility `json:"visibility" validate:"required,oneof=public private unlisted"` // "public", "private", "unlisted"
 }
