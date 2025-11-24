@@ -3,17 +3,16 @@ package services
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"crypto/sha256"
 
 	"github.com/ak-ansari/mytube/internal/api/dto"
 	"github.com/ak-ansari/mytube/internal/cache"
-	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/models"
 	"github.com/ak-ansari/mytube/internal/queue"
 	"github.com/ak-ansari/mytube/internal/repository"
@@ -22,11 +21,12 @@ import (
 )
 
 type UploadResult struct {
-	ID      string `json:"id"`
-	VideoId string `json:"videoId"`
-	Key     string `json:"key"`
-	Sha256  string `json:"sha256"`
-	Url     string
+	ID     string `json:"id"`
+	Key    string `json:"key"`
+	Sha256 string `json:"sha256"`
+	Url    string `json:"url"`
+	Stage  int    `json:"stage"`
+	Status string `json:"status"`
 }
 type VideoService struct {
 	objStore          storage.ObjectStore
@@ -35,9 +35,11 @@ type VideoService struct {
 	queue             queue.Queue
 	cache             cache.Cache
 	queueName         string
+	sm                *VideoStateMachine
+	pc                *PipelineCoordinator
 }
 
-func NewVideoService(objStore storage.ObjectStore, videoMetadataRepo repository.VideoMetadataRepository, videoRepo repository.VideoRepository, queue queue.Queue, cache cache.Cache, queueName string) *VideoService {
+func NewVideoService(objStore storage.ObjectStore, videoMetadataRepo repository.VideoMetadataRepository, videoRepo repository.VideoRepository, queue queue.Queue, cache cache.Cache, queueName string, sm *VideoStateMachine, pc *PipelineCoordinator) *VideoService {
 	return &VideoService{
 		objStore:          objStore,
 		queueName:         queueName,
@@ -45,6 +47,8 @@ func NewVideoService(objStore storage.ObjectStore, videoMetadataRepo repository.
 		cache:             cache,
 		videoMetadataRepo: videoMetadataRepo,
 		videoRepo:         videoRepo,
+		sm:                sm,
+		pc:                pc,
 	}
 }
 func (v *VideoService) GetVideoKey(ctx context.Context, id string) (string, error) {
@@ -60,78 +64,37 @@ func (v *VideoService) GetVideoKey(ctx context.Context, id string) (string, erro
 	return video.OriginalObjectKey, v.cache.Set(ctx, cacheKey, video.OriginalObjectKey, 24*time.Hour)
 }
 
-// func (v *VideoService) UploadVideo(ctx context.Context, file *multipart.FileHeader) (*UploadResult, error) {
-// 	f, err := file.Open()
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer f.Close()
-// 	buf := &bytes.Buffer{}
-// 	if _, err := io.Copy(buf, f); err != nil {
-// 		return nil, err
-// 	}
-// 	sum, err := v.CalculateChecksum(f)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	id := uuid.New()
-// 	ext := filepath.Ext(file.Filename)
-// 	key := filepath.Join("originals", id.String(), "original"+ext)
-
-// 	path, err := v.objStore.Put(ctx, id.String(), key, buf, int64(buf.Len()))
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-//		// save meta in db
-//		vm := models.Video{
-//			ID:                id,
-//			Filename:          file.Filename,
-//			OriginalObjectKey: path,
-//			Status:            models.StatusUploaded,
-//		}
-//		if err := v.videoMetadataRepo.InsertBasic(ctx, vm); err != nil {
-//			return nil, err
-//		}
-//		payload, err := json.Marshal(jobs.JobPayload{VideoID: id.String(), Step: jobs.StepValidate})
-//		if err != nil {
-//			return nil, err
-//		}
-//		if err := v.queue.Enqueue(ctx, v.queueName, payload); err != nil {
-//			return nil, err
-//		}
-//		cacheKey := cache.GetKey(cache.KEY, path)
-//		if err := v.cache.Set(ctx, cacheKey, path, 24*time.Hour); err != nil {
-//			return nil, err
-//		}
-//		return &UploadResult{VideoId: id.String(), Key: path, Sha256: sum}, nil
-//	}
 func (v *VideoService) UploadPreSign(ctx context.Context, videoDto *dto.UploadVideoDto, user *models.User) (*UploadResult, error) {
 	id := uuid.New()
 	ext := filepath.Ext(videoDto.Filename)
 	if ext == "" {
-		return nil, fmt.Errorf("filename should be provided with valid extension.filename:%s", videoDto.Filename)
+		return nil, fmt.Errorf("filename should be provided with a valid extension. filename:%s", videoDto.Filename)
 	}
 	key := filepath.Join(storage.DirectoryOriginals, id.String(), "original"+ext)
-
-	// save meta in db
-	vm := &models.VideoMetadata{
-		ID:                id, // unique id of the entry
-		Filename:          videoDto.Filename,
-		Size:              videoDto.Size,
-		OriginalObjectKey: key,
-	}
-	if err := v.videoMetadataRepo.InsertBasic(ctx, vm); err != nil {
+	// inserting available properties
+	stage, err := v.sm.GetDefault()
+	if err != nil {
 		return nil, err
 	}
 	video := &models.Video{
-		ID:      uuid.New(),
-		VideoId: vm.ID,
+		ID:      id,
 		UserID:  user.ID,
-		Status:  models.StatusUploading,
 		FileKey: key,
+		Status:  stage.Name,
+		Stage:   stage.Ordering,
 	}
 	if err := v.videoRepo.InsertBasic(ctx, video); err != nil {
+		return nil, err
+	}
+	// save meta in db
+	vm := &models.VideoMetadata{
+		ID:                uuid.New(), // unique id of the entry
+		Filename:          videoDto.Filename,
+		Size:              videoDto.Size,
+		OriginalObjectKey: key,
+		VideoId:           id,
+	}
+	if err := v.videoMetadataRepo.InsertBasic(ctx, vm); err != nil {
 		return nil, err
 	}
 
@@ -143,7 +106,7 @@ func (v *VideoService) UploadPreSign(ctx context.Context, videoDto *dto.UploadVi
 	if err := v.cache.Set(ctx, cacheKey, id.String(), 24*time.Hour); err != nil {
 		return nil, err
 	}
-	return &UploadResult{VideoId: id.String(), Key: key, Url: url, ID: video.ID.String()}, nil
+	return &UploadResult{Key: key, Url: url, ID: video.ID.String()}, nil
 }
 func (v *VideoService) GetVideo(ctx context.Context, id string) (*models.VideoMetadata, error) {
 	return v.videoMetadataRepo.Get(ctx, id)
@@ -155,21 +118,16 @@ func (v *VideoService) ConfirmVideo(ctx context.Context, id string, dto dto.Vide
 		Thumbnail:   &dto.Thumbnail,
 		Description: &dto.Description,
 		Visibility:  &dto.Visibility,
-		Status:      models.StatusUploaded,
 		Title:       &dto.Title,
 	}
 	if err := v.videoRepo.UpdateVideo(ctx, vm); err != nil {
 		return nil, err
 	}
+	if err := v.pc.Advance(ctx, id); err != nil {
+		return nil, err
+	}
 	vm, err := v.videoRepo.Get(ctx, id)
 	if err != nil {
-		return nil, err
-	}
-	payload, err := json.Marshal(jobs.JobPayload{VideoID: vm.VideoId.String(), Step: jobs.StepTranscode})
-	if err != nil {
-		return nil, err
-	}
-	if err := v.queue.Enqueue(ctx, v.queueName, payload); err != nil {
 		return nil, err
 	}
 	return vm, nil
@@ -215,10 +173,6 @@ func (v *VideoService) UpdateManifest(ctx context.Context, videoId string, manif
 func (v *VideoService) UpdateThumbnail(ctx context.Context, videoId string, thumbnailKey string) error {
 	return v.videoMetadataRepo.UpdateThumbnail(ctx, videoId, thumbnailKey)
 }
-
-//	func (v *VideoService) UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus) error {
-//		return v.videoMetadataRepo.UpdateStatus(ctx, videoId)
-//	}
 func (v *VideoService) GetTranscodingPath(id string, quality string, ext string) string {
 	return filepath.Join(storage.DirectoryTranscoded, id, fmt.Sprintf("%s%s", quality, ext))
 }
@@ -231,4 +185,19 @@ func (v *VideoService) CalculateChecksum(f io.Reader) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+func (v *VideoService) ParseBucketEvent(ctx context.Context, data string) (string, bool, error) {
+	bucketEvent, err := v.objStore.ParseBucketEvent(data)
+	if err != nil {
+		return "", false, err
+	}
+	// process only if the file is uploaded in originals directory and event is created
+	if !strings.HasPrefix(bucketEvent.ObjectKey, storage.DirectoryOriginals) || bucketEvent.Event != storage.BucketEventCreated {
+		return "", false, nil
+	}
+	id, err := v.GetVideoByKey(ctx, bucketEvent.ObjectKey)
+	if err != nil {
+		return "", false, err
+	}
+	return id, true, nil
 }

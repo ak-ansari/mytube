@@ -56,7 +56,9 @@ func main() {
 	ffm := media.NewFFM()
 	videoMetadataRepo := postgres.NewVideoMetadataRepo(pool)
 	videoRepo := postgres.NewVideoRepo(pool)
-	service := services.NewVideoService(store, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName)
+	stateMachine := services.NewVideoStateMachine()
+	pipelineCoordinator := services.NewPipelineCoordinator(videoRepo, stateMachine, queue, conf.Redis.RedisQueueName)
+	service := services.NewVideoService(store, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName, stateMachine, pipelineCoordinator)
 
 	// --- Workers ---
 	validate := workers.NewValidate(service, store, ffm, log)
@@ -65,21 +67,8 @@ func main() {
 	checksum := workers.NewChecksum(log)
 	publish := workers.NewPublish(service, log)
 	thumbnail := workers.NewThumbnail(service, ffm, store, log)
-	bucketEventProcessor := workers.NewBucketEventProcessor(service, log, store)
-	runner := workers.NewRunner(
-		queue,
-		cache,
-		conf.Redis.RedisQueueName,
-		conf.S3.MinioRedisQueueName,
-		bucketEventProcessor,
-		validate,
-		transcode,
-		segment,
-		checksum,
-		publish,
-		thumbnail,
-		log,
-	)
+	handlerRegistry := workers.NewHandlerRegistry(validate, thumbnail, transcode, segment, publish, checksum)
+	runner := workers.NewRunner(queue, cache, conf.Redis.RedisQueueName, conf.S3.MinioRedisQueueName, log, handlerRegistry, pipelineCoordinator, service)
 
 	// --- Start worker runner ---
 	go func() {

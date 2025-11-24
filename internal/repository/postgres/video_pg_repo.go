@@ -16,27 +16,35 @@ func NewVideoRepo(pool *pgxpool.Pool) *VideoRepo {
 
 func (r *VideoRepo) InsertBasic(ctx context.Context, v *models.Video) error {
 	_, err := r.pool.Exec(ctx, `
-        INSERT INTO videos (id, video_id, file_key, status ,user_id)
+        INSERT INTO videos (id, file_key, status, stage ,user_id)
         VALUES ($1,$2,$3,$4,$5)
-    `, v.ID, v.VideoId, v.FileKey, v.Status, v.UserID)
+    `, v.ID, v.FileKey, v.Status, v.Stage, v.UserID)
 	return err
 }
 func (r *VideoRepo) UpdateVideo(ctx context.Context, v *models.Video) error {
 	_, err := r.pool.Exec(ctx, `
-        UPDATE videos SET title=$2, thumbnail=$3, description=$4, visibility=$5, status=$6 WHERE id=$1
-    `, v.ID, v.Title, v.Thumbnail, v.Description, v.Visibility, v.Status)
+        UPDATE videos SET title=$2, thumbnail=$3, description=$4, visibility=$5 WHERE id=$1
+    `, v.ID, v.Title, v.Thumbnail, v.Description, v.Visibility)
 	return err
 }
 
 func (r *VideoRepo) Get(ctx context.Context, id string) (*models.Video, error) {
 	parsedId, _ := uuid.Parse(id)
 	row := r.pool.QueryRow(ctx, `
-        SELECT id, video_id, user_id, file_key, thumbnail, title, description, visibility, status, created_at, updated_at
+        SELECT id, user_id, file_key, thumbnail, title, description, visibility, status, stage,created_at, updated_at
         FROM videos WHERE id=$1
     `, parsedId)
 	var v models.Video
-	if err := row.Scan(&v.ID, &v.VideoId, &v.UserID, &v.FileKey, &v.Thumbnail, &v.Title, &v.Description, &v.Visibility, &v.Status, &v.CreatedAt, &v.UpdatedAt); err != nil {
+	if err := row.Scan(&v.ID, &v.UserID, &v.FileKey, &v.Thumbnail, &v.Title, &v.Description, &v.Visibility, &v.Status, &v.Stage, &v.CreatedAt, &v.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &v, nil
+}
+func (r *VideoRepo) UpdateState(ctx context.Context, videoId string, stage int, status models.VideoStatus) error {
+	parsedId, _ := uuid.Parse(videoId)
+	_, err := r.pool.Exec(ctx, `UPDATE videos SET stage=$2, status=$3 WHERE id=$1`, parsedId, stage, status)
+	if err != nil {
+		return err
+	}
+	return nil
 }
