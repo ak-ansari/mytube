@@ -7,7 +7,8 @@ import (
 )
 
 type VideoMetadata struct {
-	ID                 uuid.UUID `json:"id"` // primary key
+	ID                 uuid.UUID `json:"id"`       // primary key
+	VideoId            uuid.UUID `json:"video_id"` // foreign key ref videos
 	Filename           string    `json:"filename"`
 	OriginalObjectKey  string    `json:"original_object_key"`
 	SHA256             *string   `json:"sha256,omitempty"`

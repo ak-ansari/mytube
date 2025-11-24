@@ -1,6 +1,7 @@
 -- +goose Up
 CREATE TABLE IF NOT EXISTS video_metadata (
     id UUID PRIMARY KEY,
+    video_id UUID NOT NULL, -- reference to videos table
     filename TEXT NOT NULL,
     original_object_key TEXT NOT NULL,
     sha256 TEXT,
@@ -14,7 +15,8 @@ CREATE TABLE IF NOT EXISTS video_metadata (
     available_qualities TEXT[] DEFAULT '{}',
     thumbnail TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_video FOREIGN KEY (video_id) REFERENCES videos (id) ON DELETE CASCADE
 );
 
 -- Useful indexes

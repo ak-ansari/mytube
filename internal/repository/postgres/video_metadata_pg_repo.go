@@ -15,9 +15,9 @@ func NewVideoMetadataRepo(pool *pgxpool.Pool) *VideoMetadataRepo {
 
 func (r *VideoMetadataRepo) InsertBasic(ctx context.Context, v *models.VideoMetadata) error {
 	_, err := r.pool.Exec(ctx, `
-        INSERT INTO video_metadata (id, filename, original_object_key,size)
-        VALUES ($1,$2,$3,$4)
-    `, v.ID, v.Filename, v.OriginalObjectKey, v.Size)
+        INSERT INTO video_metadata (id, filename, original_object_key,size,video_id)
+        VALUES ($1,$2,$3,$4,$5)
+    `, v.ID, v.Filename, v.OriginalObjectKey, v.Size, v.VideoId)
 	return err
 }
 
@@ -55,7 +55,7 @@ func (r *VideoMetadataRepo) Get(ctx context.Context, videoId string) (*models.Vi
 	id, _ := uuid.Parse(videoId)
 	row := r.pool.QueryRow(ctx, `
         SELECT id, filename, original_object_key, duration_seconds, codec_video, codec_audio, width, height, available_qualities, manifest_path, thumbnail, created_at, updated_at
-        FROM video_metadata WHERE id=$1
+        FROM video_metadata WHERE id=$1 OR video_id=$1
     `, id)
 	var v models.VideoMetadata
 	if err := row.Scan(&v.ID, &v.Filename, &v.OriginalObjectKey, &v.DurationSeconds, &v.CodecVideo, &v.CodecAudio, &v.Width, &v.Height, &v.AvailableQualities, &v.ManifestPath, &v.Thumbnail, &v.CreatedAt, &v.UpdatedAt); err != nil {

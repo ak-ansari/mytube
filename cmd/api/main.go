@@ -31,7 +31,6 @@ func main() {
 
 	}
 	defer logr.Flush()
-
 	// DB pool
 	dbPool, err := db.NewPool(conf, logr)
 	if err != nil {
@@ -53,7 +52,9 @@ func main() {
 	// Repository + Service
 	videoMetadataRepo := postgres.NewVideoMetadataRepo(dbPool)
 	videoRepo := postgres.NewVideoRepo(dbPool)
-	service := services.NewVideoService(objStore, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName)
+	stateMachine := services.NewVideoStateMachine()
+	pipelineCoordinator := services.NewPipelineCoordinator(videoRepo, stateMachine, queue, conf.Redis.RedisQueueName)
+	service := services.NewVideoService(objStore, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName, stateMachine, pipelineCoordinator)
 
 	// Setup router
 	r := api.SetupRouter(service)

@@ -9,12 +9,17 @@ import (
 type VideoStatus string
 
 const (
-	StatusUploading  VideoStatus = "uploading"
-	StatusUploaded   VideoStatus = "uploaded"
-	StatusValid      VideoStatus = "valid"
-	StatusProcessing VideoStatus = "processing"
-	StatusReady      VideoStatus = "ready"
-	StatusFailed     VideoStatus = "failed"
+	StatusUploadPending      VideoStatus = "upload_pending"
+	StatusUploaded           VideoStatus = "uploaded"
+	StatusValid              VideoStatus = "valid"
+	StatusThumbnailGenerated VideoStatus = "thumbnail_generated"
+	StatusTranscoded         VideoStatus = "transcoded"
+	StatusSegmentGenerated   VideoStatus = "segment_generated"
+	StatusChecksum           VideoStatus = "checksum"
+	StatusPublished          VideoStatus = "published"
+	StatusDone               VideoStatus = "done"
+	StatusPhase1Failed       VideoStatus = "phase_1_failed"
+	StatusPhase2Failed       VideoStatus = "phase_2_failed"
 )
 
 type VideoVisibility string
@@ -27,7 +32,6 @@ const (
 
 type Video struct {
 	ID          uuid.UUID        `json:"id"`                    // primary key
-	VideoId     uuid.UUID        `json:"video_id"`              // video id ref to video_metadata table
 	UserID      uuid.UUID        `json:"user_id"`               // uploader
 	FileKey     string           `json:"file_key"`              // file address at cloude store
 	Thumbnail   *string          `json:"thumbnail"`             // address to video thumbnail file
@@ -35,6 +39,7 @@ type Video struct {
 	Description *string          `json:"description,omitempty"` // description about video
 	Visibility  *VideoVisibility `json:"visibility"`            // "public", "private", "unlisted"
 	Status      VideoStatus      `json:"status"`                // "pending", "uploaded", "processing", "ready"
+	Stage       int              `json:"stage"`                 // current pipeline stage of video
 	CreatedAt   time.Time        `json:"created_at"`            // timestamp
 	UpdatedAt   time.Time        `json:"updated_at"`            // timestamp
 }

@@ -87,7 +87,7 @@ func (vh *VideoHandler) GetVideo(c *gin.Context) {
 	id := c.Param("id")
 	ctx, cancel := context.WithTimeout(c, 120*time.Second)
 	defer cancel()
-	result, err := vh.service.GetVideo(ctx, id)
+	result, err := vh.service.GetVideoKey(ctx, id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, err.Error())
 		return

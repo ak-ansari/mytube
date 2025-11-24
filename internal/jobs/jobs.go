@@ -1,17 +1,9 @@
 package jobs
 
-type Step string
-
-const (
-	StepValidate  Step = "validate"
-	StepTranscode Step = "transcode"
-	StepSegment   Step = "segment"
-	StepChecksum  Step = "checksum"
-	StepThumbs    Step = "thumbnail"
-	StepPublish   Step = "publish"
-)
+import "github.com/ak-ansari/mytube/internal/models"
 
 type JobPayload struct {
-	VideoID string `json:"videoId"`
-	Step    Step   `json:"step"`
+	VideoID string             `json:"video_id"`
+	Stage   int                `json:"stage"`
+	Status  models.VideoStatus `json:"status"`
 }
