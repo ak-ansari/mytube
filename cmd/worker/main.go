@@ -9,14 +9,16 @@ import (
 	redisCache "github.com/ak-ansari/mytube/internal/cache/redis"
 	"github.com/ak-ansari/mytube/internal/config"
 	"github.com/ak-ansari/mytube/internal/db"
+	elasticsearch_index "github.com/ak-ansari/mytube/internal/index/elasticsearch"
 	"github.com/ak-ansari/mytube/internal/media"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
-	client "github.com/ak-ansari/mytube/internal/pkg/redis"
 	redisQueue "github.com/ak-ansari/mytube/internal/queue/redis"
 	"github.com/ak-ansari/mytube/internal/repository/postgres"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
 	"github.com/ak-ansari/mytube/internal/workers"
+	"github.com/ak-ansari/mytube/pkg/elastic"
+	"github.com/ak-ansari/mytube/pkg/logger"
+	client "github.com/ak-ansari/mytube/pkg/redis"
 )
 
 func main() {
@@ -51,14 +53,21 @@ func main() {
 	redisClient := client.NewRedisClient(&conf.Redis)
 	queue := redisQueue.NewRedisQ(redisClient)
 	cache := redisCache.NewRedisCache(redisClient)
-
+	esClient, err := elastic.NewEsClient(conf)
+	if err != nil {
+		log.Fatal("failed to connect with elastic search client", logger.Error(err))
+	}
+	videoIndex, err := elasticsearch_index.NewVideoEsIndex(esClient)
+	if err != nil {
+		log.Fatal("failed to init video index", logger.Error(err))
+	}
 	// --- Media + Services ---
 	ffm := media.NewFFM()
 	videoMetadataRepo := postgres.NewVideoMetadataRepo(pool)
 	videoRepo := postgres.NewVideoRepo(pool)
 	stateMachine := services.NewVideoStateMachine()
 	pipelineCoordinator := services.NewPipelineCoordinator(videoRepo, stateMachine, queue, conf.Redis.RedisQueueName)
-	service := services.NewVideoService(store, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName, stateMachine, pipelineCoordinator)
+	service := services.NewVideoService(videoIndex, store, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName, stateMachine, pipelineCoordinator)
 
 	// --- Workers ---
 	validate := workers.NewValidate(service, store, ffm, log)

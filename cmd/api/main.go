@@ -8,12 +8,14 @@ import (
 	redisCache "github.com/ak-ansari/mytube/internal/cache/redis"
 	"github.com/ak-ansari/mytube/internal/config"
 	"github.com/ak-ansari/mytube/internal/db"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
-	client "github.com/ak-ansari/mytube/internal/pkg/redis"
+	elasticsearch_index "github.com/ak-ansari/mytube/internal/index/elasticsearch"
 	redisQueue "github.com/ak-ansari/mytube/internal/queue/redis"
 	"github.com/ak-ansari/mytube/internal/repository/postgres"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
+	"github.com/ak-ansari/mytube/pkg/elastic"
+	"github.com/ak-ansari/mytube/pkg/logger"
+	client "github.com/ak-ansari/mytube/pkg/redis"
 )
 
 func main() {
@@ -41,6 +43,14 @@ func main() {
 	client := client.NewRedisClient(&conf.Redis)
 	queue := redisQueue.NewRedisQ(client)
 	cache := redisCache.NewRedisCache(client)
+	esClient, err := elastic.NewEsClient(conf)
+	if err != nil {
+		logr.Fatal("failed to connect with elastic search client", logger.Error(err))
+	}
+	videoIndex, err := elasticsearch_index.NewVideoEsIndex(esClient)
+	if err != nil {
+		logr.Fatal("failed to init video index", logger.Error(err))
+	}
 
 	// Object store
 	objStore, err := storage.NewS3Store(logr)
@@ -54,7 +64,7 @@ func main() {
 	videoRepo := postgres.NewVideoRepo(dbPool)
 	stateMachine := services.NewVideoStateMachine()
 	pipelineCoordinator := services.NewPipelineCoordinator(videoRepo, stateMachine, queue, conf.Redis.RedisQueueName)
-	service := services.NewVideoService(objStore, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName, stateMachine, pipelineCoordinator)
+	service := services.NewVideoService(videoIndex, objStore, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName, stateMachine, pipelineCoordinator)
 
 	// Setup router
 	r := api.SetupRouter(service)

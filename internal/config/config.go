@@ -33,6 +33,10 @@ type S3 struct {
 	MinioBucket         string `yaml:"MINIO_BUCKET"`
 	MinioRedisQueueName string `yaml:"MINIO_REDIS_QUEUE_NAME"`
 }
+type ES struct {
+	EsPort string `yaml:"PORT"`
+	EsHost string `yaml:"HOST"`
+}
 type Server struct {
 	HttpPort string `yaml:"HTTP_PORT"`
 }
@@ -42,6 +46,7 @@ type Config struct {
 	S3     S3     `yaml:"S3"`
 	Server Server `yaml:"SERVER"`
 	Env    string `yaml:"ENV"`
+	Es     ES     `yaml:"ES"`
 }
 
 func validateConfigPath(path string) error {

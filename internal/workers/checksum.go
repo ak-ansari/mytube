@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/ak-ansari/mytube/internal/jobs"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
+	"github.com/ak-ansari/mytube/pkg/logger"
 )
 
 type Checksum struct {

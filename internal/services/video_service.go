@@ -13,10 +13,12 @@ import (
 
 	"github.com/ak-ansari/mytube/internal/api/dto"
 	"github.com/ak-ansari/mytube/internal/cache"
+	"github.com/ak-ansari/mytube/internal/index"
 	"github.com/ak-ansari/mytube/internal/models"
 	"github.com/ak-ansari/mytube/internal/queue"
 	"github.com/ak-ansari/mytube/internal/repository"
 	"github.com/ak-ansari/mytube/internal/storage"
+	"github.com/ak-ansari/mytube/internal/util"
 	"github.com/google/uuid"
 )
 
@@ -37,9 +39,10 @@ type VideoService struct {
 	queueName         string
 	sm                *VideoStateMachine
 	pc                *PipelineCoordinator
+	videoIndex        index.VideoIndex
 }
 
-func NewVideoService(objStore storage.ObjectStore, videoMetadataRepo repository.VideoMetadataRepository, videoRepo repository.VideoRepository, queue queue.Queue, cache cache.Cache, queueName string, sm *VideoStateMachine, pc *PipelineCoordinator) *VideoService {
+func NewVideoService(vi index.VideoIndex, objStore storage.ObjectStore, videoMetadataRepo repository.VideoMetadataRepository, videoRepo repository.VideoRepository, queue queue.Queue, cache cache.Cache, queueName string, sm *VideoStateMachine, pc *PipelineCoordinator) *VideoService {
 	return &VideoService{
 		objStore:          objStore,
 		queueName:         queueName,
@@ -49,6 +52,7 @@ func NewVideoService(objStore storage.ObjectStore, videoMetadataRepo repository.
 		videoRepo:         videoRepo,
 		sm:                sm,
 		pc:                pc,
+		videoIndex:        vi,
 	}
 }
 func (v *VideoService) GetVideoKey(ctx context.Context, id string) (string, error) {
@@ -119,6 +123,9 @@ func (v *VideoService) ConfirmVideo(ctx context.Context, id string, dto dto.Vide
 		Description: &dto.Description,
 		Visibility:  &dto.Visibility,
 		Title:       &dto.Title,
+	}
+	if err := v.videoIndex.InsertVideo(ctx, vm); err != nil {
+		return nil, err
 	}
 	if err := v.videoRepo.UpdateVideo(ctx, vm); err != nil {
 		return nil, err
@@ -200,4 +207,21 @@ func (v *VideoService) ParseBucketEvent(ctx context.Context, data string) (strin
 		return "", false, err
 	}
 	return id, true, nil
+}
+func (v *VideoService) SearchVideo(ctx context.Context, query, pageStr, sizeStr string) ([]*models.Video, error) {
+	page := util.ParseIntWithDefault(pageStr, 1)
+	size := util.ParseIntWithDefault(sizeStr, 20)
+	offset := (page - 1) * size
+	ids, err := v.videoIndex.SearchVideo(ctx, query, []string{"title", "description"}, offset, size)
+	if err != nil {
+		return nil, err
+	}
+	videos, err := v.videoRepo.GetByIds(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	return videos, nil
+}
+func (v *VideoService) SuggestVideo(ctx context.Context, query string) ([]string, error) {
+	return v.videoIndex.SuggestVideos(ctx, query)
 }

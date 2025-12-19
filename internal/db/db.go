@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/ak-ansari/mytube/internal/config"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
+	"github.com/ak-ansari/mytube/pkg/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"

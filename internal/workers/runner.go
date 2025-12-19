@@ -8,9 +8,9 @@ import (
 
 	"github.com/ak-ansari/mytube/internal/cache"
 	"github.com/ak-ansari/mytube/internal/jobs"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
 	"github.com/ak-ansari/mytube/internal/queue"
 	"github.com/ak-ansari/mytube/internal/services"
+	"github.com/ak-ansari/mytube/pkg/logger"
 )
 
 type Runner struct {

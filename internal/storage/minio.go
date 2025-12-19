@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/ak-ansari/mytube/internal/config"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
+	"github.com/ak-ansari/mytube/pkg/logger"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )

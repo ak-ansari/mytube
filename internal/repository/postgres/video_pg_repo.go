@@ -40,6 +40,47 @@ func (r *VideoRepo) Get(ctx context.Context, id string) (*models.Video, error) {
 	}
 	return &v, nil
 }
+func (r *VideoRepo) GetByIds(ctx context.Context, ids []string) ([]*models.Video, error) {
+	parsedIds := make([]uuid.UUID, 0, len(ids))
+
+	for _, id := range ids {
+		parsedId, err := uuid.Parse(id)
+		if err != nil {
+			return nil, err
+		}
+		parsedIds = append(parsedIds, parsedId)
+	}
+
+	rows, err := r.pool.Query(ctx, `
+        SELECT id, user_id, file_key, thumbnail, title, description, visibility, status, stage, created_at, updated_at
+        FROM videos 
+        WHERE id = ANY($1)
+    `, parsedIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	videos := make([]*models.Video, 0)
+
+	for rows.Next() {
+		var v models.Video
+		if err := rows.Scan(
+			&v.ID, &v.UserID, &v.FileKey, &v.Thumbnail, &v.Title, &v.Description,
+			&v.Visibility, &v.Status, &v.Stage, &v.CreatedAt, &v.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		videos = append(videos, &v)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return videos, nil
+}
+
 func (r *VideoRepo) UpdateState(ctx context.Context, videoId string, stage int, status models.VideoStatus) error {
 	parsedId, _ := uuid.Parse(videoId)
 	_, err := r.pool.Exec(ctx, `UPDATE videos SET stage=$2, status=$3 WHERE id=$1`, parsedId, stage, status)

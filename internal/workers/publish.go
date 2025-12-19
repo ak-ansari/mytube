@@ -5,8 +5,8 @@ import (
 
 	"github.com/ak-ansari/mytube/internal/jobs"
 	// "github.com/ak-ansari/mytube/internal/models"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
 	"github.com/ak-ansari/mytube/internal/services"
+	"github.com/ak-ansari/mytube/pkg/logger"
 )
 
 type Publish struct {
