@@ -63,15 +63,15 @@ var Stages = map[int]*Stage{
 	8: {
 		Ordering:   8,
 		Name:       StatusPublished,
-		IsTerminal: false,
-		Parent:     ParentStagePhase2,
-	},
-	9: {
-		Ordering:   9,
-		Name:       StatusDone,
 		IsTerminal: true,
 		Parent:     ParentStagePhase2,
 	},
+	// 9: {
+	// 	Ordering:   9,
+	// 	Name:       StatusDone,
+	// 	IsTerminal: true,
+	// 	Parent:     ParentStagePhase2,
+	// },
 }
 var ErrorStages = map[ParentStage]*Stage{
 	ParentStagePhase1: {

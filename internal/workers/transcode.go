@@ -9,7 +9,7 @@ import (
 	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/media"
 
-	// "github.com/ak-ansari/mytube/internal/models"
+	// "github.com/ak-ansari/mytube/models"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
 	"github.com/ak-ansari/mytube/internal/util"

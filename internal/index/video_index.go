@@ -3,7 +3,7 @@ package index
 import (
 	"context"
 
-	"github.com/ak-ansari/mytube/internal/models"
+	"github.com/ak-ansari/mytube/models"
 )
 
 type VideoIndex interface {

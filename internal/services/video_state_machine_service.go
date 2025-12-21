@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ak-ansari/mytube/internal/models"
+	"github.com/ak-ansari/mytube/models"
 )
 
 var (

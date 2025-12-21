@@ -1,6 +1,6 @@
 package dto
 
-import "github.com/ak-ansari/mytube/internal/models"
+import "github.com/ak-ansari/mytube/models"
 
 type UploadVideoDto struct {
 	Size     int64  `json:"size" validate:"required,gt=0"`
