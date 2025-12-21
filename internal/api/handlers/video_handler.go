@@ -59,13 +59,13 @@ func (vh *VideoHandler) UploadPreSign(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, util.NewResponse(http.StatusUnauthorized, "Unauthorized", nil, nil))
 		return
 	}
-	url, err := vh.service.UploadPreSign(ctx, &vd, u)
+	result, err := vh.service.UploadPreSign(ctx, &vd, u)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusCreated, util.NewResponse(201, "file uploaded successfully", url, nil))
+	c.JSON(http.StatusCreated, util.NewResponse(201, "file uploaded successfully", result, nil))
 
 }
 func (vh *VideoHandler) ConfirmVideo(c *gin.Context) {
@@ -131,7 +131,7 @@ func (vh *VideoHandler) SearchVideo(c *gin.Context) {
 
 }
 func (vh *VideoHandler) SuggestVideo(c *gin.Context) {
-	query := c.Query("query")
+	query := c.Query("search")
 	ctx, cancel := context.WithTimeout(c, 120*time.Second)
 	defer cancel()
 	result, err := vh.service.SuggestVideo(ctx, query)
