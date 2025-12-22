@@ -141,16 +141,7 @@ func (v *VideoService) ConfirmVideo(ctx context.Context, id string, dto dto.Vide
 
 }
 func (v *VideoService) GetDownloadUrl(ctx context.Context, key string) (string, error) {
-	cacheKey := cache.GetKey(cache.URL, key)
-	var cached string
-	if err := v.cache.Get(ctx, cacheKey, &cached); err == nil && cached != "" {
-		return cached, err
-	}
-	u, err := v.objStore.GetUrl(ctx, key)
-	if err != nil {
-		return "", err
-	}
-	return u, v.cache.Set(ctx, cacheKey, u, 24*time.Hour)
+	return v.objStore.GetUrl(ctx, key)
 }
 func (v *VideoService) GetVideoByKey(ctx context.Context, key string) (string, error) {
 	cacheKey := cache.GetKey(cache.KEY, key)

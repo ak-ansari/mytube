@@ -6,11 +6,12 @@ import (
 	"github.com/ak-ansari/mytube/internal/api/middleware"
 	"github.com/ak-ansari/mytube/internal/api/routes"
 	"github.com/ak-ansari/mytube/internal/services"
+	"github.com/ak-ansari/mytube/internal/storage"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(videoService *services.VideoService) *gin.Engine {
+func SetupRouter(videoService *services.VideoService, objectStore storage.ObjectStore) *gin.Engine {
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:5173", "https://myfrontend.com"}, // frontend URLs
@@ -22,5 +23,6 @@ func SetupRouter(videoService *services.VideoService) *gin.Engine {
 	}))
 	protected := r.Group("/api", middleware.AuthMiddleware())
 	routes.SetupVideoRoutes(protected, videoService)
+	routes.SetupFileRoutes(protected, objectStore)
 	return r
 }

@@ -67,7 +67,7 @@ func main() {
 	service := services.NewVideoService(videoIndex, objStore, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName, stateMachine, pipelineCoordinator)
 
 	// Setup router
-	r := api.SetupRouter(service)
+	r := api.SetupRouter(service, objStore)
 	logr.Info("starting server", logger.String("port", conf.Server.HttpPort))
 	logr.Info("Application is Running in ", logger.String("env", conf.Env))
 	if err := r.Run(":" + conf.Server.HttpPort); err != nil {
