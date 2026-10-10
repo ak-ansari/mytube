@@ -15,6 +15,7 @@ import (
 	"github.com/ak-ansari/mytube/internal/repository/postgres"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
+	"github.com/ak-ansari/mytube/internal/stream"
 	"github.com/ak-ansari/mytube/pkg/elastic"
 	"github.com/ak-ansari/mytube/pkg/logger"
 	client "github.com/ak-ansari/mytube/pkg/redis"
@@ -73,8 +74,12 @@ func main() {
 	if err != nil {
 		logr.Fatal("failed to init keycloak verifier", logger.Error(err))
 	}
+	streamSigner, err := stream.NewSigner(conf.Stream)
+	if err != nil {
+		logr.Fatal("failed to init stream signer", logger.Error(err))
+	}
 	userService := services.NewUserService(postgres.NewUserRepo(dbPool), objStore)
-	catalogService := services.NewVideoCatalogService(postgres.NewVideoCatalogRepo(dbPool), postgres.NewCommentRepo(dbPool), videoIndex, objStore, cache)
+	catalogService := services.NewVideoCatalogService(postgres.NewVideoCatalogRepo(dbPool), postgres.NewCommentRepo(dbPool), videoIndex, objStore, cache, streamSigner)
 
 	// Setup router
 	r := api.SetupRouter(service, objStore, verifier, userService, catalogService)

@@ -29,3 +29,8 @@ KEYCLOAK:
   URL: http://localhost:8180
   REALM: mytube
   CLIENT_ID: mytube-frontend
+
+STREAM:
+  BASE_URL: http://localhost
+  TOKEN_SECRET: change-me-local-dev-secret
+  TOKEN_TTL: 6h

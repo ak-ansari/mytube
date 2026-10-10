@@ -42,6 +42,13 @@ type Keycloak struct {
 	Realm    string `yaml:"REALM"`     // e.g. mytube
 	ClientId string `yaml:"CLIENT_ID"` // frontend public client; checked against the token "azp" claim
 }
+
+// Stream configures signed HLS playback URLs served by the nginx secure_link gateway.
+type Stream struct {
+	BaseUrl     string `yaml:"BASE_URL"`     // public origin of the gateway, e.g. http://localhost
+	TokenSecret string `yaml:"TOKEN_SECRET"` // shared with nginx (VIDEO_TOKEN_SECRET)
+	TokenTTL    string `yaml:"TOKEN_TTL"`    // Go duration, e.g. 6h; must outlive a viewing session
+}
 type Server struct {
 	HttpPort string `yaml:"HTTP_PORT"`
 }
@@ -53,6 +60,7 @@ type Config struct {
 	Env      string   `yaml:"ENV"`
 	Es       ES       `yaml:"ES"`
 	Keycloak Keycloak `yaml:"KEYCLOAK"`
+	Stream   Stream   `yaml:"STREAM"`
 }
 
 func validateConfigPath(path string) error {

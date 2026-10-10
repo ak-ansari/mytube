@@ -16,7 +16,7 @@ All commands run from the repo root (migrations are loaded from `./migrations` r
 
 ```bash
 cp configs/config.example.yaml configs/config.yaml   # first time; config.yaml is gitignored
-make               # docker-compose up (postgres, redis, minio, nginx, elasticsearch, kibana, keycloak) + MinIO bucket (needs `mc`, `yq`)
+make               # docker-compose up (postgres, redis, minio, nginx, elasticsearch, kibana, keycloak) + MinIO bucket (needs `mc`)
 make keycloak-dev  # once per fresh Keycloak volume: lets the admin console work over http
 make run-api       # API on :8080
 make run-worker    # pipeline worker (needs ffmpeg/ffprobe on PATH)
@@ -24,11 +24,23 @@ make down
 go build ./... && go vet ./...   # compile check; there are no tests yet
 ```
 
-Ports: Postgres 5432, Redis 6379, MinIO S3 API via nginx **9002** (presigned URLs point here), MinIO console 9001, ES 9200, Kibana 5601, **Keycloak 8180** (admin/admin).
+Ports: **HLS gateway 80** (nginx), Postgres 5432, Redis 6379, MinIO S3 API via nginx **9002** (presigned URLs point here), MinIO console 9001, ES 9200, Kibana 5601, **Keycloak 8180** (admin/admin).
 
 Gotchas:
 - A Homebrew `redis-server` on `127.0.0.1:6379` shadows the Docker Redis. MinIO publishes upload events into the Docker Redis, so the worker never sees uploads (videos stay `upload_pending`). Stop the local Redis (`brew services stop redis`) or point `REDIS.REDIS_HOST` at the Docker one.
 - The MinIO bucket needs an event rule sending `originals/` puts to Redis (`mc event add myminio/mytube arn:minio:sqs::primary:redis --event put,delete --prefix originals/`); it persists in the MinIO volume.
+
+## Private bucket + HLS playback gateway
+
+The MinIO bucket is **private**. There are three ways in:
+
+1. **S3 API on :9002 (nginx → MinIO).** Only SigV4-signed requests pass: an `Authorization` header (SDK, `mc`) or a presigned `X-Amz-Signature` query. Everything else gets 403. Thumbnails and avatars reach clients as presigned GETs (`thumbnail_url`, `avatar_url`), and uploads as presigned PUTs.
+2. **HLS gateway on :80 (nginx `secure_link`).** URL: `/videos/<token>/<expires>/<videoId>/<file.m3u8|.ts>`, where `token = base64url(md5("<expires>:<videoId>:<STREAM.TOKEN_SECRET>"))`. The token sits in the *path*, so the relative URIs inside `master.m3u8` and the variant playlists inherit it and the player needs no hooks. Bad or foreign token gives 403, expired gives 410. nginx rewrites the request to MinIO's internal `:9000/<bucket>/segments/<id>/<file>`.
+3. **Anonymous `GetObject` on `segments/*`** (set by `make setup-bucket`). It's only reachable on the docker network, because MinIO's :9000 isn't published to the host. This is the hop nginx uses; in production the equivalent is CloudFront Origin Access Control plus signed URLs or cookies.
+
+- `internal/stream/signer.go` mints the URLs. `VideoCatalogService.GetDetails` returns `manifest_url` from it, so visibility and owner checks happen before a token is issued. TTL comes from `STREAM.TOKEN_TTL` and is rounded up to the hour so URLs stay cacheable.
+- nginx config: `deployments/nginx/templates/default.conf.template`. The official image renders it with envsubst, taking `VIDEO_TOKEN_SECRET` and `MINIO_BUCKET` from the compose file (`VIDEO_TOKEN_SECRET` must equal `STREAM.TOKEN_SECRET`). After changing the secret, recreate nginx (`make docker-up`).
+- `configs/config.yaml` needs a `STREAM` section (`BASE_URL`, `TOKEN_SECRET`, `TOKEN_TTL`). The API refuses to start without it.
 
 ## Auth (Keycloak)
 
@@ -52,12 +64,13 @@ internal/                all application code (not importable from outside the m
 pkg/                     reusable, app-agnostic clients (logger, elastic, redis)
 migrations/              goose SQL (applied on startup from ./migrations)
 configs/                 config.example.yaml (+ your gitignored config.yaml)
-deployments/             docker-compose.yml (project name pinned to "mytube"), nginx.conf, keycloak/ realm import
-scripts/                 envexporter.sh (exports configs/config.yaml values for docker-compose)
+deployments/             docker-compose.yml (project name pinned to "mytube"), nginx/templates/ (envsubst-rendered), keycloak/ realm import
 docs/                    todo.txt
 ```
 
-Run every command from the repo root. `make` passes `-f deployments/docker-compose.yml`; when calling docker-compose by hand, source `scripts/envexporter.sh` first.
+Run every command from the repo root. `make` passes `-f deployments/docker-compose.yml`.
+
+**Config lives in two places that must agree:** `deployments/docker-compose.yml` holds the infra credentials as literal dev values (Postgres user/pass/db, MinIO root user/pass, MinIO event key, bucket name, nginx `VIDEO_TOKEN_SECRET`). `configs/config.yaml` holds the same values for the Go apps. The makefile repeats the MinIO credentials for `setup-bucket`. Change all three together.
 
 ## Architecture
 
@@ -66,7 +79,7 @@ Run every command from the repo root. `make` passes `-f deployments/docker-compo
 - `internal/services/video_service.go` (+ `pipeline_coordinator.go`, `video_state_machine_service.go`) — original upload/processing logic.
 - `internal/services/video_catalog_service.go` — feed/search/watch, studio CRUD, views, reactions, comments. `user_service.go` — profile, channels, subscriptions. `errors.go` — `ErrNotFound/ErrForbidden/ErrBadRequest` that handlers map to 404/403/400.
 - `internal/repository/*.go` — interfaces; `internal/repository/postgres/*` — pgx implementations (raw SQL). `video_catalog_pg_repo.go` builds the joined "video card" query (videos + users + video_metadata) and owns `publishedVideoCond`.
-- `internal/storage` — `ObjectStore` + MinIO impl. Keys: `originals/{videoId}/original.{ext}`, `thumbnails/{videoId}/…` (auto `{videoId}.jpeg`, custom uploads `{uuid}.{ext}`), `transcoded/{videoId}/{q}.mp4`, `segments/{videoId}/master.m3u8`, `avatars/{userId}/{uuid}.{ext}`. Bucket is anonymous-read so HLS relative URLs resolve.
+- `internal/storage` — `ObjectStore` + MinIO impl. Keys: `originals/{videoId}/original.{ext}`, `thumbnails/{videoId}/…` (auto `{videoId}.jpeg`, custom uploads `{uuid}.{ext}`), `transcoded/{videoId}/{q}.mp4`, `segments/{videoId}/master.m3u8`, `avatars/{userId}/{uuid}.{ext}`. Bucket is private (see above).
 - `internal/index/elasticsearch` — `video_index`; search returns IDs, rows then come from Postgres.
 - `internal/models/catalog.go` — API shapes: `VideoCard`, `VideoDetails`, `Channel`, `Profile`, `Comment`, `Page[T]`. Services fill presigned `*_url` fields (`thumbnail_url`, `avatar_url`, `manifest_url`) so the client needs no extra calls.
 - `migrations/` — goose SQL, auto-applied on startup. 004 adds `users.email/description`; 005 adds `videos.views`, `video_reactions`, `comments`, `subscriptions`. Next: `006_…sql`.
@@ -100,7 +113,7 @@ A video is publicly visible when `status = 'published' AND visibility = 'public'
 | GET 🔒 | `/users/me/subscriptions` | subscribed channels |
 | GET | `/channels/:id`, `/channels/:id/videos` | public channel + its published videos |
 | POST 🔒 / DELETE 🔒 | `/channels/:id/subscribe` | subscribe / unsubscribe |
-| GET 🔒 / GET | `/files/presign?key=&size=`, `/files/url?key=` | presigned PUT (thumbnails, avatars) / GET |
+| GET 🔒 / GET | `/files/presign?key=&size=`, `/files/url?key=` | presigned PUT (thumbnails, avatars) / GET — both still accept any key (see known gaps) |
 
 Paged responses are `{items, page, size, has_more}` (`size` capped at 50).
 
@@ -113,6 +126,8 @@ Paged responses are `{items, page, size, has_more}` (`size` capped at 50).
 - Module path: `github.com/ak-ansari/mytube`.
 
 ## Known gaps / later
+
+- **Security:** `/files/presign` signs a PUT for *any* key (overwrite anyone's objects). `/files/url`, `/videos/url` and `GET /videos/:id` hand out presigned GETs for any key, including originals of private videos. Client-supplied `thumbnail` and `avatar` keys aren't checked against the caller's prefix.
 
 - `VideoMetadataRepo.GetByKey` returns the metadata id, not the video id. The worker only works because the presign step caches key→video id for 24h.
 - `confirm` has no "phase 1 finished" guard (see above). The original `/videos/search` doesn't filter by visibility.

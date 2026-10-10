@@ -1,0 +1,71 @@
+# Rendered by the nginx image's envsubst entrypoint into /etc/nginx/conf.d/default.conf.
+# Only ${VIDEO_TOKEN_SECRET} and ${MINIO_BUCKET} are substituted; nginx's own $variables are left alone.
+
+# S3 API proxy (SDKs, mc, browser presigned PUT/GET).
+# The bucket is private: only SigV4-signed requests (Authorization header or presigned query) get through,
+# so anonymous reads are impossible from outside the docker network.
+map $args $mytube_presigned {
+    ~(^|&)X-Amz-Signature=  1;
+    default                 0;
+}
+
+server {
+    listen 9002;
+    server_name localhost;
+    client_max_body_size 10G;
+
+    location / {
+        set $mytube_signed $mytube_presigned;
+        if ($http_authorization != "") {
+            set $mytube_signed 1;
+        }
+        if ($mytube_signed = 0) {
+            return 403;
+        }
+        proxy_pass http://minio:9000;
+        proxy_set_header Host $http_host;          # Preserve client-signed host
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+    }
+}
+
+# HLS playback gateway.
+# URL: /videos/<token>/<expires>/<videoId>/<file>   (file = *.m3u8 | *.ts)
+# token = base64url(md5("<expires>:<videoId>:<secret>")), minted by the API (internal/stream).
+# The token sits in the path, so the relative variant playlists and segments inside master.m3u8
+# resolve to URLs that carry it too: one token unlocks one video until it expires.
+server {
+    listen 80;
+    server_name localhost;
+
+    location ~ "^/videos/(?<vt>[A-Za-z0-9_-]{22})/(?<ve>[0-9]+)/(?<vid>[0-9a-f-]{36})/(?<vfile>[A-Za-z0-9_.-]+\.(m3u8|ts))$" {
+        secure_link $vt,$ve;
+        secure_link_md5 "$secure_link_expires:$vid:${VIDEO_TOKEN_SECRET}";
+
+        if ($secure_link = "") {
+            return 403;
+        }
+        if ($secure_link = "0") {
+            return 410;    # expired: the client should re-fetch /api/videos/:id/details
+        }
+
+        # MinIO's internal port is reachable only on the docker network; the bucket policy
+        # allows anonymous GetObject on segments/* for exactly this hop.
+        rewrite ^ /${MINIO_BUCKET}/segments/$vid/$vfile break;
+        proxy_pass http://minio:9000;
+        proxy_set_header Host minio:9000;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+
+        proxy_hide_header Access-Control-Allow-Origin;
+        add_header Access-Control-Allow-Origin * always;
+        add_header Cache-Control "private, max-age=3600" always;
+    }
+
+    location / {
+        return 404;
+    }
+}

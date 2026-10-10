@@ -12,6 +12,7 @@ import (
 	"github.com/ak-ansari/mytube/internal/models"
 	"github.com/ak-ansari/mytube/internal/repository"
 	"github.com/ak-ansari/mytube/internal/storage"
+	"github.com/ak-ansari/mytube/internal/stream"
 	"github.com/google/uuid"
 )
 
@@ -24,10 +25,11 @@ type VideoCatalogService struct {
 	videoIndex  index.VideoIndex
 	objStore    storage.ObjectStore
 	cache       cache.Cache
+	streams     *stream.Signer
 }
 
-func NewVideoCatalogService(repo repository.VideoCatalogRepository, commentRepo repository.CommentRepository, vi index.VideoIndex, objStore storage.ObjectStore, c cache.Cache) *VideoCatalogService {
-	return &VideoCatalogService{repo: repo, commentRepo: commentRepo, videoIndex: vi, objStore: objStore, cache: c}
+func NewVideoCatalogService(repo repository.VideoCatalogRepository, commentRepo repository.CommentRepository, vi index.VideoIndex, objStore storage.ObjectStore, c cache.Cache, streams *stream.Signer) *VideoCatalogService {
+	return &VideoCatalogService{repo: repo, commentRepo: commentRepo, videoIndex: vi, objStore: objStore, cache: c, streams: streams}
 }
 
 // Paging is a 1-based page with a bounded size.
@@ -125,7 +127,10 @@ func (s *VideoCatalogService) GetDetails(ctx context.Context, id uuid.UUID, view
 		}
 	}
 	d.ThumbnailURL = signURL(ctx, s.objStore, d.Thumbnail)
-	d.ManifestURL = signURL(ctx, s.objStore, d.ManifestPath)
+	if d.ManifestPath != nil && *d.ManifestPath != "" {
+		// segments are private; playback goes through the token-checked nginx gateway
+		d.ManifestURL = s.streams.PlaybackURL(d.ID.String(), path.Base(*d.ManifestPath))
+	}
 	signChannel(ctx, s.objStore, &d.Channel)
 	return d, nil
 }
