@@ -76,21 +76,24 @@ Run every command from the repo root. `make` passes `-f deployments/docker-compo
 ## Architecture
 
 - `cmd/api/main.go` — config, logger, pg pool (runs migrations), redis queue/cache, ES index, MinIO store, `VideoService` (upload pipeline), `UserService`, `VideoCatalogService`, Keycloak verifier → `api.SetupRouter`.
-- `cmd/worker/main.go` — same deps + `workers.Runner` (2 goroutines polling bucket events and the job queue).
+- `cmd/worker/main.go` — same deps + `workers.Runner` (2 goroutines polling bucket events and the job queue; shutdown waits for them via `Runner.Wait`).
+  - **No retries anywhere.** A failing stage handler is logged and the video is marked failed (`PipelineCoordinator.Fail` → `phase_1_failed` / `phase_2_failed`). A bad bucket event is logged and dropped. Panics are recovered per iteration; infrastructure errors (e.g. Redis down) pause the loop ~1s.
+  - `PipelineCoordinator.Advance` moves stages with `VideoRepository.AdvanceState` (`UPDATE … WHERE stage = <from>`), so concurrent callers advance a stage once and only the winner enqueues the next job.
 - `internal/services/video_service.go` (+ `pipeline_coordinator.go`, `video_state_machine_service.go`) — original upload/processing logic.
 - `internal/services/video_catalog_service.go` — feed/search/watch, studio CRUD, views, reactions, comments. `user_service.go` — profile, channels, subscriptions. `errors.go` — `ErrNotFound/ErrForbidden/ErrBadRequest` that handlers map to 404/403/400.
 - `internal/repository/*.go` — interfaces; `internal/repository/postgres/*` — pgx implementations (raw SQL). `video_catalog_pg_repo.go` builds the joined "video card" query (videos + users + video_metadata) and owns `publishedVideoCond`.
 - `internal/storage` — `ObjectStore` + MinIO impl. Keys: `originals/{videoId}/original.{ext}`, `thumbnails/{videoId}/…` (auto `{videoId}.jpeg`, custom uploads `{uuid}.{ext}`), `transcoded/{videoId}/{q}.mp4`, `segments/{videoId}/master.m3u8`, `avatars/{userId}/{uuid}.{ext}`. Bucket is private (see above).
 - `internal/index/elasticsearch` — `video_index`; search returns IDs, rows then come from Postgres.
 - `internal/models/catalog.go` — API shapes: `VideoCard`, `VideoDetails`, `Channel`, `Profile`, `Comment`, `Page[T]`. Services fill presigned `*_url` fields (`thumbnail_url`, `avatar_url`, `manifest_url`) so the client needs no extra calls.
-- `migrations/` — goose SQL, auto-applied on startup. 004 adds `users.email/description`; 005 adds `videos.views`, `video_reactions`, `comments`, `subscriptions`. Next: `006_…sql`.
+- `migrations/` — goose SQL, auto-applied on startup. 004 adds `users.email/description`; 005 adds `videos.views`, `video_reactions`, `comments`, `subscriptions`; 006 drops the btree indexes on `videos.title/description` (they broke writes over ~2.7KB) and adds a unique index on `video_metadata(video_id)`. Next: `007_…sql`.
 
 ### Upload + processing flow
 
 1. `POST /api/videos/upload/presign {file_name, size}` → inserts `videos` (stage 1 `upload_pending`) + `video_metadata`, returns `{id, key, url}`; client PUTs to MinIO.
 2. MinIO → Redis hash → worker `ProcessBucketEvents` → `PipelineCoordinator.Advance`. Validate runs, then the thumbnail job; at the phase boundary `Advance` **waits until the video has a title** (status `valid`, thumbnail set).
-3. `POST /api/videos/:id/confirm` saves title/desc/visibility/thumbnail, indexes into ES, advances to phase 2 (transcode → HLS segments → checksum → publish → `published`).
-   Confirm must only be sent once phase 1 is finished (`status == valid` and `thumbnail` set). Earlier, `Advance` double-steps the pipeline. The frontend enforces this; the backend doesn't yet.
+3. `POST /api/videos/:id/confirm` saves title/desc/visibility/thumbnail to Postgres, then indexes into ES, and advances to phase 2 (transcode → HLS segments → checksum → publish → `published`).
+   Confirm returns 400 once the video is past phase 1 (stage > 3) or failed. It only calls `Advance` itself when phase 1 is finished (stage 3 `valid` and `video_metadata.thumbnail` set); otherwise the worker's `Advance` at the phase boundary sees the title and continues. `thumbnail` is optional (`""` keeps the auto-generated one) and must be under `thumbnails/{videoId}/`.
+   Transcoding always writes MP4 renditions and skips qualities taller than the source (the smallest is always produced).
 
 A video is publicly visible when `status = 'published' AND visibility = 'public'`; unlisted is watchable by link; owners can see everything.
 
@@ -101,7 +104,7 @@ A video is publicly visible when `status = 'published' AND visibility = 'public'
 | GET | `/videos/browse?search=&page=&size=` | home feed (latest) or ES search, published+public only |
 | GET | `/videos/:id/details` | watch page payload (counts, my_reaction, is_subscribed, manifest_url) |
 | GET | `/videos/:id/related` | other published videos |
-| POST | `/videos/:id/view` | +1 view, deduped per user/IP for 30 min (Redis SETNX) |
+| POST | `/videos/:id/view` | +1 view if the viewer may watch it, deduped per user/IP for 30 min (Redis SETNX; no proxies trusted, so `X-Forwarded-For` is ignored) |
 | PUT 🔒 | `/videos/:id/reaction` `{value: 1\|-1\|0}` | like / dislike / clear |
 | GET / POST 🔒 | `/videos/:id/comments` | list (paged) / add `{content}` |
 | DELETE 🔒 | `/videos/:id/comments/:commentId` | comment author or video owner |
@@ -109,7 +112,7 @@ A video is publicly visible when `status = 'published' AND visibility = 'public'
 | PUT 🔒 | `/videos/:id` `{title?, description?, visibility?, thumbnail?}` | owner; also re-indexes ES |
 | DELETE 🔒 | `/videos/:id` | owner; removes rows (cascade), ES doc and all object prefixes |
 | POST 🔒 | `/videos/upload/presign`, `/videos/:id/confirm` | upload flow (confirm: owner only) |
-| GET | `/videos/search`, `/videos/suggest`, `/videos/url`, `/videos/:id`, `/video-meta/:id` | original endpoints (search here is unfiltered; prefer `/browse`) |
+| GET | `/videos/search`, `/videos/suggest`, `/videos/url`, `/videos/:id`, `/video-meta/:id` | original endpoints (search/suggest only return published+public videos; prefer `/browse`) |
 | GET 🔒 / PUT 🔒 | `/users/me` | profile; update `{channel_name?, description?, avatar?}` |
 | GET 🔒 | `/users/me/subscriptions` | subscribed channels |
 | GET | `/channels/:id`, `/channels/:id/videos` | public channel + its published videos |
@@ -128,8 +131,7 @@ Paged responses are `{items, page, size, has_more}` (`size` capped at 50).
 
 ## Known gaps / later
 
-- **Security:** `/files/presign` signs a PUT for *any* key (overwrite anyone's objects). `/files/url`, `/videos/url` and `GET /videos/:id` hand out presigned GETs for any key, including originals of private videos. Client-supplied `thumbnail` and `avatar` keys aren't checked against the caller's prefix.
+- **Security:** `/files/presign` signs a PUT for *any* key (overwrite anyone's objects). `/files/url`, `/videos/url` and `GET /videos/:id` hand out presigned GETs for any key, including originals of private videos. Client-supplied `avatar` keys aren't checked against the caller's prefix (video `thumbnail` keys are: they must start with `thumbnails/{videoId}/`).
 
 - `VideoMetadataRepo.GetByKey` returns the metadata id, not the video id. The worker only works because the presign step caches key→video id for 24h.
-- `confirm` has no "phase 1 finished" guard (see above). The original `/videos/search` doesn't filter by visibility.
 - No tests. `users.subscribers` column is unused (counts come from `subscriptions`).

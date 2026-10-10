@@ -28,7 +28,7 @@ type BucketEvent struct {
 type ObjectStore interface {
 	Put(ctx context.Context, fileId string, key string, file io.Reader, size int64) (string, error)
 	GerPreSignedPutUrl(ctx context.Context, key string, size int64) (string, error)
-	Get(ctx context.Context, key string) (io.Reader, int64, error)
+	Get(ctx context.Context, key string) (io.ReadCloser, int64, error) // caller closes the reader
 	Delete(ctx context.Context, key string) error
 	GetUrl(ctx context.Context, key string) (string, error)
 	SaveLocally(ctx context.Context, key string, path string) error

@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/url"
 	"strings"
@@ -81,7 +82,7 @@ func NewS3Store(log logger.Logger) (*S3Store, error) {
 	client, err := minio.New(s3Conf.MinioEndpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(s3Conf.MinioAccessKey, s3Conf.MinioSecretKey, ""),
 		Secure: false,
-		Region: "us-est-1",
+		Region: "us-east-1",
 	})
 	if err != nil {
 		return nil, err
@@ -146,7 +147,7 @@ func (s3 *S3Store) GerPreSignedPutUrl(ctx context.Context, key string, size int6
 		logger.String("size", res.Path))
 	return res.String(), nil
 }
-func (s3 *S3Store) Get(ctx context.Context, key string) (io.Reader, int64, error) {
+func (s3 *S3Store) Get(ctx context.Context, key string) (io.ReadCloser, int64, error) {
 	obj, err := s3.client.GetObject(ctx, s3.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
 		s3.log.Error("Failed to get object",
@@ -157,6 +158,7 @@ func (s3 *S3Store) Get(ctx context.Context, key string) (io.Reader, int64, error
 
 	st, err := obj.Stat()
 	if err != nil {
+		obj.Close()
 		s3.log.Error("Failed to stat object",
 			logger.String("key", key),
 			logger.Error(err))
@@ -232,6 +234,9 @@ func (s3 *S3Store) ParseBucketEvent(rawData string) (*BucketEvent, error) {
 	if err := json.Unmarshal([]byte(rawData), &payload); err != nil {
 		s3.log.Error("Failed to unmarshal event payload", logger.Error(err))
 		return nil, err
+	}
+	if len(payload.Records) == 0 {
+		return nil, errors.New("bucket event has no records")
 	}
 	key, err := url.QueryUnescape(payload.Records[0].S3.Object.Key)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/ak-ansari/mytube/internal/index"
 	"github.com/ak-ansari/mytube/internal/models"
 	es_v9 "github.com/elastic/go-elasticsearch/v9"
 )
@@ -154,7 +155,7 @@ func (vi *VideoEsIndex) SearchVideo(ctx context.Context, query string, fields []
 
 	return ids, nil
 }
-func (vi *VideoEsIndex) SuggestVideos(ctx context.Context, query string) ([]string, error) {
+func (vi *VideoEsIndex) SuggestVideos(ctx context.Context, query string) ([]index.Suggestion, error) {
 	body := map[string]interface{}{
 		"suggest": map[string]interface{}{
 			"video-suggest": map[string]interface{}{
@@ -189,20 +190,24 @@ func (vi *VideoEsIndex) SuggestVideos(ctx context.Context, query string) ([]stri
 		return nil, fmt.Errorf("ES suggest error: %s", res.String())
 	}
 
-	var r map[string]any
+	var r struct {
+		Suggest struct {
+			VideoSuggest []struct {
+				Options []struct {
+					ID   string `json:"_id"`
+					Text string `json:"text"`
+				} `json:"options"`
+			} `json:"video-suggest"`
+		} `json:"suggest"`
+	}
 	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
 		return nil, err
 	}
 
-	suggestions := []string{}
-
-	// Parse ES response
-	if s, ok := r["suggest"].(map[string]any)["video-suggest"].([]any); ok {
-		for _, entry := range s {
-			opts := entry.(map[string]any)["options"].([]any)
-			for _, o := range opts {
-				suggestions = append(suggestions, o.(map[string]any)["text"].(string))
-			}
+	suggestions := []index.Suggestion{}
+	for _, entry := range r.Suggest.VideoSuggest {
+		for _, o := range entry.Options {
+			suggestions = append(suggestions, index.Suggestion{ID: o.ID, Text: o.Text})
 		}
 	}
 

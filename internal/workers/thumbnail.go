@@ -48,13 +48,14 @@ func (t *Thumbnail) Handle(ctx context.Context, payload *jobs.JobPayload) error 
 		return err
 	}
 
-	outDir := filepath.Join(os.TempDir(), payload.VideoID)
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	outDir, err := os.MkdirTemp("", "mytube-thumbnail-"+payload.VideoID+"-*")
+	if err != nil {
 		t.log.Error("Failed to create temp directory",
-			logger.String("path", outDir),
+			logger.String("videoId", payload.VideoID),
 			logger.Error(err))
 		return err
 	}
+	defer os.RemoveAll(outDir)
 
 	filename := payload.VideoID + ".jpeg"
 	outPath := filepath.Join(outDir, filename)

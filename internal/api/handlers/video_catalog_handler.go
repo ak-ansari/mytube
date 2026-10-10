@@ -113,10 +113,11 @@ func (h *VideoCatalogHandler) RecordView(c *gin.Context) {
 		return
 	}
 	viewer := c.ClientIP()
-	if uid := middleware.CurrentUserID(c); uid != nil {
+	uid := middleware.CurrentUserID(c)
+	if uid != nil {
 		viewer = uid.String()
 	}
-	if err := h.catalog.RecordView(c, id, viewer); err != nil {
+	if err := h.catalog.RecordView(c, id, uid, viewer); err != nil {
 		respondError(c, err)
 		return
 	}

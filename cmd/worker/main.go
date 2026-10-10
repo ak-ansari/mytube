@@ -80,15 +80,16 @@ func main() {
 	runner := workers.NewRunner(queue, cache, conf.Redis.RedisQueueName, conf.S3.MinioRedisQueueName, log, handlerRegistry, pipelineCoordinator, service)
 
 	// --- Start worker runner ---
-	go func() {
-		runner.Start(ctx)
-	}()
+	runner.Start(ctx)
 	log.Info("Application is Running in ", logger.String("env", conf.Env))
 
 	// --- Graceful shutdown ---
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
-	cancel()
 	log.Info("Shutting down gracefully...")
+	cancel()
+	// let workers finish their current iteration before exiting
+	runner.Wait()
+	log.Info("Workers stopped")
 }

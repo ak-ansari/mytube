@@ -55,11 +55,11 @@ func (r *VideoMetadataRepo) UpdateThumbnail(ctx context.Context, videoId string,
 func (r *VideoMetadataRepo) Get(ctx context.Context, videoId string) (*models.VideoMetadata, error) {
 	id, _ := uuid.Parse(videoId)
 	row := r.pool.QueryRow(ctx, `
-        SELECT id, filename, original_object_key, duration_seconds, codec_video, codec_audio, width, height, available_qualities, manifest_path, thumbnail, created_at, updated_at
+        SELECT id, filename, original_object_key, size, duration_seconds, codec_video, codec_audio, width, height, available_qualities, manifest_path, thumbnail, created_at, updated_at
         FROM video_metadata WHERE id=$1 OR video_id=$1
     `, id)
 	var v models.VideoMetadata
-	if err := row.Scan(&v.ID, &v.Filename, &v.OriginalObjectKey, &v.DurationSeconds, &v.CodecVideo, &v.CodecAudio, &v.Width, &v.Height, &v.AvailableQualities, &v.ManifestPath, &v.Thumbnail, &v.CreatedAt, &v.UpdatedAt); err != nil {
+	if err := row.Scan(&v.ID, &v.Filename, &v.OriginalObjectKey, &v.Size, &v.DurationSeconds, &v.CodecVideo, &v.CodecAudio, &v.Width, &v.Height, &v.AvailableQualities, &v.ManifestPath, &v.Thumbnail, &v.CreatedAt, &v.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &v, nil

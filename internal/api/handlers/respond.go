@@ -14,6 +14,9 @@ import (
 
 const maxPageSize = 50
 
+// maxResultWindow is Elasticsearch's default index.max_result_window (from + size).
+const maxResultWindow = 10000
+
 func respondOK(c *gin.Context, message string, data any) {
 	c.JSON(http.StatusOK, util.NewResponse(http.StatusOK, message, data, nil))
 }
@@ -52,5 +55,10 @@ func paging(c *gin.Context) services.Paging {
 	if size > maxPageSize {
 		size = maxPageSize
 	}
-	return services.Paging{Page: util.ParseIntWithDefault(c.Query("page"), 1), Size: size}
+	page := util.ParseIntWithDefault(c.Query("page"), 1)
+	// services fetch size+1 rows from (page-1)*size, so keep page*size+1 inside the window
+	if maxPage := (maxResultWindow - 1) / size; page > maxPage {
+		page = maxPage
+	}
+	return services.Paging{Page: page, Size: size}
 }

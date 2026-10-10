@@ -44,13 +44,31 @@ func (c *Validate) Handle(ctx context.Context, p *jobs.JobPayload) error {
 		return err
 	}
 
-	f, _, err := c.store.Get(ctx, key)
+	meta, err := c.service.GetMeta(ctx, p.VideoID)
+	if err != nil {
+		c.log.Error("Failed to get video metadata",
+			logger.String("videoId", p.VideoID),
+			logger.Error(err))
+		return err
+	}
+
+	f, size, err := c.store.Get(ctx, key)
 	if err != nil {
 		c.log.Error("Failed to get file from store",
 			logger.String("videoId", p.VideoID),
 			logger.String("key", key),
 			logger.Error(err))
 		return err
+	}
+	defer f.Close()
+
+	// the presigned PUT doesn't enforce the size declared at presign time
+	if size > meta.Size {
+		c.log.Error("Uploaded file is larger than declared",
+			logger.String("videoId", p.VideoID),
+			logger.Int64("actual", size),
+			logger.Int64("declared", meta.Size))
+		return fmt.Errorf("uploaded file size %d exceeds declared size %d", size, meta.Size)
 	}
 
 	temp, err := os.CreateTemp("", "video-*")
@@ -103,6 +121,12 @@ func (c *Validate) Handle(ctx context.Context, p *jobs.JobPayload) error {
 		} else if s.CodecType == "audio" {
 			acodec = s.CodecName
 		}
+	}
+
+	if vcodec == "" {
+		c.log.Error("No video stream found",
+			logger.String("videoId", p.VideoID))
+		return fmt.Errorf("no video stream found in uploaded file")
 	}
 
 	if pr.Format.Duration != "" {

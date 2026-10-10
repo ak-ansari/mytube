@@ -50,9 +50,14 @@ func (pc *PipelineCoordinator) Advance(ctx context.Context, id string) error {
 		fmt.Println("waiting for user confirmation before transit to pase 2")
 		return nil
 	}
-	// Update DB
-	if err := pc.repo.UpdateState(ctx, id, nextStage.Ordering, nextStage.Name); err != nil {
+	// Update DB atomically: only the caller that moves the video off currentStage enqueues the next job
+	advanced, err := pc.repo.AdvanceState(ctx, id, currentStage.Ordering, nextStage.Ordering, nextStage.Name)
+	if err != nil {
 		return err
+	}
+	if !advanced {
+		fmt.Printf("video %s already advanced past stage %d (or failed) by another caller, skipping\n", id, currentStage.Ordering)
+		return nil
 	}
 
 	// If terminal, do nothing more

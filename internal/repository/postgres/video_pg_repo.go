@@ -89,3 +89,16 @@ func (r *VideoRepo) UpdateState(ctx context.Context, videoId string, stage int, 
 	}
 	return nil
 }
+
+func (r *VideoRepo) AdvanceState(ctx context.Context, videoId string, fromStage, toStage int, status models.VideoStatus) (bool, error) {
+	parsedId, _ := uuid.Parse(videoId)
+	// failed videos keep their stage number, so exclude them explicitly
+	tag, err := r.pool.Exec(ctx, `
+        UPDATE videos SET stage=$3, status=$4
+        WHERE id=$1 AND stage=$2 AND status NOT IN ('phase_1_failed', 'phase_2_failed')
+    `, parsedId, fromStage, toStage, status)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -44,7 +43,7 @@ func NewVideoHandler(service *services.VideoService) *VideoHandler {
 func (vh *VideoHandler) UploadPreSign(c *gin.Context) {
 	var vd dto.UploadVideoDto
 	if err := c.ShouldBindBodyWithJSON(&vd); err != nil {
-		c.JSON(http.StatusBadRequest, util.NewResponse(http.StatusBadRequest, "Bad request", nil, err))
+		badRequest(c, "file_name (with extension) and a size between 1 byte and 10 GiB are required")
 		return
 	}
 	ctx, cancel := context.WithTimeout(c, 120*time.Second)
@@ -53,6 +52,7 @@ func (vh *VideoHandler) UploadPreSign(c *gin.Context) {
 	user, exists := c.Get("user")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, util.NewResponse(http.StatusUnauthorized, "Unauthorized", nil, nil))
+		return
 	}
 	u, ok := user.(*models.User)
 	if !ok {
@@ -61,7 +61,7 @@ func (vh *VideoHandler) UploadPreSign(c *gin.Context) {
 	}
 	result, err := vh.service.UploadPreSign(ctx, &vd, u)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, err.Error())
+		respondError(c, err)
 		return
 	}
 
@@ -72,21 +72,17 @@ func (vh *VideoHandler) ConfirmVideo(c *gin.Context) {
 	var videoConfirmDto dto.VideoConfirmDto
 	id := c.Param("id")
 	if err := c.ShouldBindBodyWithJSON(&videoConfirmDto); err != nil {
-
-		fmt.Println(err)
-		c.JSON(http.StatusBadRequest, util.NewResponse(http.StatusBadRequest, "Bad request", nil, err))
+		badRequest(c, "title (3-100 characters), visibility (public, private or unlisted) and a description of at most 5000 characters are required")
 		return
 	}
 	ctx, cancel := context.WithTimeout(c, 120*time.Second)
 	defer cancel()
 	vm, err := vh.service.ConfirmVideo(ctx, id, videoConfirmDto)
 	if err != nil {
-
-		fmt.Println(err)
-		c.JSON(http.StatusInternalServerError, util.NewResponse(http.StatusBadRequest, "Bad request", nil, err))
+		respondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, util.NewResponse(http.StatusOK, "Video is successfully saved", vm, nil))
+	respondOK(c, "Video is successfully saved", vm)
 }
 func (vh *VideoHandler) GetVideo(c *gin.Context) {
 	id := c.Param("id")
@@ -94,11 +90,11 @@ func (vh *VideoHandler) GetVideo(c *gin.Context) {
 	defer cancel()
 	result, err := vh.service.GetVideoKey(ctx, id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, err.Error())
+		respondError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, util.NewResponse(201, "get video successfully", result, nil))
+	respondOK(c, "get video successfully", result)
 
 }
 func (vh *VideoHandler) GetDownloadUrl(c *gin.Context) {
@@ -107,11 +103,11 @@ func (vh *VideoHandler) GetDownloadUrl(c *gin.Context) {
 	defer cancel()
 	result, err := vh.service.GetDownloadUrl(ctx, key)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, err.Error())
+		respondError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, util.NewResponse(201, "get video download url successfully", result, nil))
+	respondOK(c, "get video download url successfully", result)
 
 }
 func (vh *VideoHandler) SearchVideo(c *gin.Context) {
@@ -122,12 +118,11 @@ func (vh *VideoHandler) SearchVideo(c *gin.Context) {
 	defer cancel()
 	result, err := vh.service.SearchVideo(ctx, query, page, size)
 	if err != nil {
-		fmt.Println(err)
-		c.JSON(http.StatusInternalServerError, err.Error())
+		respondError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, util.NewResponse(201, "videos retrieved successfully", result, nil))
+	respondOK(c, "videos retrieved successfully", result)
 
 }
 func (vh *VideoHandler) SuggestVideo(c *gin.Context) {
@@ -136,11 +131,10 @@ func (vh *VideoHandler) SuggestVideo(c *gin.Context) {
 	defer cancel()
 	result, err := vh.service.SuggestVideo(ctx, query)
 	if err != nil {
-		fmt.Println(err)
-		c.JSON(http.StatusInternalServerError, err.Error())
+		respondError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, util.NewResponse(201, "search suggestion fetched successfully", result, nil))
+	respondOK(c, "search suggestion fetched successfully", result)
 
 }

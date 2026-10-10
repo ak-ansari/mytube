@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 	"path"
 	"strings"
 	"time"
@@ -175,6 +176,9 @@ func (s *VideoCatalogService) Update(ctx context.Context, id, userID uuid.UUID, 
 	if in.Description != nil && len(*in.Description) > 5000 {
 		return nil, fmt.Errorf("%w: description must be at most 5000 characters", ErrBadRequest)
 	}
+	if in.Thumbnail != nil && !validThumbnailKey(id.String(), *in.Thumbnail) {
+		return nil, fmt.Errorf("%w: thumbnail must be uploaded for this video", ErrBadRequest)
+	}
 	if in.Visibility != nil {
 		switch *in.Visibility {
 		case models.VisibilityPublic, models.VisibilityPrivate, models.VisibilityUnlisted:
@@ -201,35 +205,40 @@ func (s *VideoCatalogService) Update(ctx context.Context, id, userID uuid.UUID, 
 	return updated, nil
 }
 
-// Delete removes the video row (metadata, reactions and comments cascade), its search doc and all stored files.
+// validThumbnailKey reports whether key is an object under this video's thumbnail folder
+// (auto `thumbnails/{id}/{id}.jpeg` or custom `thumbnails/{id}/{uuid}.{ext}`).
+func validThumbnailKey(videoID, key string) bool {
+	prefix := storage.DirectoryThumbnails + "/" + videoID + "/"
+	return strings.HasPrefix(key, prefix) && len(key) > len(prefix) && !strings.Contains(key, "..")
+}
+
+// Delete removes the video row (metadata, reactions and comments cascade), then best-effort its search doc and all stored files.
 func (s *VideoCatalogService) Delete(ctx context.Context, id, userID uuid.UUID) error {
 	if err := s.AssertOwner(ctx, id, userID); err != nil {
-		return err
-	}
-	d, err := s.repo.GetDetails(ctx, id, &userID)
-	if err != nil {
-		return notFound(err)
-	}
-	if err := s.videoIndex.DeleteVideo(ctx, id.String()); err != nil {
 		return err
 	}
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
 	}
+	// the video is gone for clients now; leftovers are only logged
+	if err := s.videoIndex.DeleteVideo(ctx, id.String()); err != nil {
+		log.Printf("delete video %s: remove search doc: %v", id, err)
+	}
+	// custom thumbnails live under thumbnails/{id}/ too, so the prefixes cover every file
 	for _, dir := range []string{storage.DirectoryOriginals, storage.DirectoryThumbnails, storage.DirectoryTranscoded, storage.DirectorySegments} {
 		if err := s.objStore.DeletePrefix(ctx, path.Join(dir, id.String())+"/"); err != nil {
-			return err
+			log.Printf("delete video %s: remove objects under %s: %v", id, dir, err)
 		}
-	}
-	// custom thumbnails uploaded outside the per-video folders
-	if d.Thumbnail != nil && !strings.HasPrefix(*d.Thumbnail, storage.DirectoryThumbnails+"/"+id.String()) {
-		_ = s.objStore.Delete(ctx, *d.Thumbnail)
 	}
 	return nil
 }
 
-// RecordView counts at most one view per viewer per video every viewDedupWindow.
-func (s *VideoCatalogService) RecordView(ctx context.Context, id uuid.UUID, viewerKey string) error {
+// RecordView counts at most one view per viewer per video every viewDedupWindow,
+// and only for videos the viewer may watch (same rules as GetDetails).
+func (s *VideoCatalogService) RecordView(ctx context.Context, id uuid.UUID, viewerID *uuid.UUID, viewerKey string) error {
+	if _, err := s.GetDetails(ctx, id, viewerID); err != nil {
+		return err
+	}
 	key := cache.GetKey("view", id.String()+":"+viewerKey)
 	first, err := s.cache.SetNX(ctx, key, "1", viewDedupWindow)
 	if err != nil || !first {
