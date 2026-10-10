@@ -2,7 +2,7 @@ SHELL := /bin/bash
 CONFIG=internal/config/config.yaml
 ENV_SCRIPT=./envexporter.sh
 
-.PHONY: all docker-up setup-bucket run-api run-worker down
+.PHONY: all docker-up setup-bucket keycloak-dev run-api run-worker down
 
 # Default target (runs when you just type `make`)
 all: docker-up setup-bucket
@@ -18,6 +18,12 @@ setup-bucket:
 	mc mb --ignore-existing myminio/\$${MINIO_BUCKET} && \
 	mc anonymous set download myminio/\$${MINIO_BUCKET}"
 
+
+# Keycloak's master realm requires HTTPS for non-localhost callers; through Docker's NAT the host counts as
+# external, which blocks the admin console at http://localhost:8180. Run once after Keycloak starts (admin/admin).
+keycloak-dev:
+	@docker exec keycloak bash -c '/opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin && /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE'
+	@echo "✅ Keycloak admin console: http://localhost:8180 (admin/admin)"
 
 run-api:
 	@bash -c "source $(ENV_SCRIPT) && ENV=$$ENV go run ./cmd/api/main.go -config $(CONFIG)"

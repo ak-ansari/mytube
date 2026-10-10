@@ -16,6 +16,16 @@ S3:
   MINIO_SECRET_KEY: mytube123
   MINIO_ENDPOINT: localhost:9002
   MINIO_BUCKET: mytube
+  MINIO_REDIS_QUEUE_NAME: minio-events-queue
 
 SERVER:
   HTTP_PORT: "8080"
+
+ES:
+  PORT: "9200"
+  HOST: "localhost"
+
+KEYCLOAK:
+  URL: http://localhost:8180
+  REALM: mytube
+  CLIENT_ID: mytube-frontend

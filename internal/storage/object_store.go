@@ -34,4 +34,5 @@ type ObjectStore interface {
 	SaveLocally(ctx context.Context, key string, path string) error
 	UploadLocalFile(ctx context.Context, key string, path string, mediaType string) (string, error)
 	ParseBucketEvent(rawData string) (*BucketEvent, error)
+	DeletePrefix(ctx context.Context, prefix string) error
 }

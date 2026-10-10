@@ -37,16 +37,22 @@ type ES struct {
 	EsPort string `yaml:"PORT"`
 	EsHost string `yaml:"HOST"`
 }
+type Keycloak struct {
+	Url      string `yaml:"URL"`       // e.g. http://localhost:8180 (must match the "iss" host the frontend logs in through)
+	Realm    string `yaml:"REALM"`     // e.g. mytube
+	ClientId string `yaml:"CLIENT_ID"` // frontend public client; checked against the token "azp" claim
+}
 type Server struct {
 	HttpPort string `yaml:"HTTP_PORT"`
 }
 type Config struct {
-	DB     DB     `yaml:"DB"`
-	Redis  Redis  `yaml:"REDIS"`
-	S3     S3     `yaml:"S3"`
-	Server Server `yaml:"SERVER"`
-	Env    string `yaml:"ENV"`
-	Es     ES     `yaml:"ES"`
+	DB       DB       `yaml:"DB"`
+	Redis    Redis    `yaml:"REDIS"`
+	S3       S3       `yaml:"S3"`
+	Server   Server   `yaml:"SERVER"`
+	Env      string   `yaml:"ENV"`
+	Es       ES       `yaml:"ES"`
+	Keycloak Keycloak `yaml:"KEYCLOAK"`
 }
 
 func validateConfigPath(path string) error {

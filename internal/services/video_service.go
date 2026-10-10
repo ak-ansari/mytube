@@ -162,6 +162,9 @@ func (v *VideoService) DownloadVideo() string {
 func (v *VideoService) UpdateMeta(ctx context.Context, videoId string, sha string, dur int, vcodec, acodec string, w, h int) error {
 	return v.videoMetadataRepo.UpdateMeta(ctx, videoId, sha, dur, vcodec, acodec, w, h)
 }
+func (v *VideoService) GetMeta(ctx context.Context, videoId string) (*models.VideoMetadata, error) {
+	return v.videoMetadataRepo.Get(ctx, videoId)
+}
 func (v *VideoService) UpdateQualities(ctx context.Context, videoId string, qualities []string) error {
 	return v.videoMetadataRepo.UpdateQualities(ctx, videoId, qualities)
 }

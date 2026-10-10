@@ -101,7 +101,7 @@ func (vi *VideoEsIndex) InsertVideo(ctx context.Context, v *models.Video) error 
 	return nil
 }
 func (vi *VideoEsIndex) UpdateVideo(ctx context.Context, v *models.Video) error {
-	return nil
+	return vi.InsertVideo(ctx, v)
 }
 func (vi *VideoEsIndex) SearchVideo(ctx context.Context, query string, fields []string, offset, size int) ([]string, error) {
 	body := map[string]interface{}{

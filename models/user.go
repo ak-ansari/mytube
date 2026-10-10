@@ -16,4 +16,6 @@ type User struct {
 	Subscribers int        `json:"subscribers"`
 	Avatar      string     `json:"avatar,omitempty"`
 	Status      UserStatus `json:"status,omitempty"`
+	Email       string     `json:"email,omitempty"`
+	Description string     `json:"description,omitempty"`
 }

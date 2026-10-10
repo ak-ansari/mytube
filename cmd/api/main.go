@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
 	"github.com/ak-ansari/mytube/internal/api"
+	"github.com/ak-ansari/mytube/internal/auth"
 	redisCache "github.com/ak-ansari/mytube/internal/cache/redis"
 	"github.com/ak-ansari/mytube/internal/config"
 	"github.com/ak-ansari/mytube/internal/db"
@@ -66,8 +68,16 @@ func main() {
 	pipelineCoordinator := services.NewPipelineCoordinator(videoRepo, stateMachine, queue, conf.Redis.RedisQueueName)
 	service := services.NewVideoService(videoIndex, objStore, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName, stateMachine, pipelineCoordinator)
 
+	// Users, catalog + Keycloak auth
+	verifier, err := auth.NewKeycloakVerifier(context.Background(), conf.Keycloak)
+	if err != nil {
+		logr.Fatal("failed to init keycloak verifier", logger.Error(err))
+	}
+	userService := services.NewUserService(postgres.NewUserRepo(dbPool), objStore)
+	catalogService := services.NewVideoCatalogService(postgres.NewVideoCatalogRepo(dbPool), postgres.NewCommentRepo(dbPool), videoIndex, objStore, cache)
+
 	// Setup router
-	r := api.SetupRouter(service, objStore)
+	r := api.SetupRouter(service, objStore, verifier, userService, catalogService)
 	logr.Info("starting server", logger.String("port", conf.Server.HttpPort))
 	logr.Info("Application is Running in ", logger.String("env", conf.Env))
 	if err := r.Run(":" + conf.Server.HttpPort); err != nil {

@@ -25,21 +25,21 @@ func (r *VideoMetadataRepo) InsertBasic(ctx context.Context, v *models.VideoMeta
 func (r *VideoMetadataRepo) UpdateMeta(ctx context.Context, videoId string, sha string, dur int, vcodec string, acodec string, w int, h int) error {
 	id, _ := uuid.Parse(videoId)
 	_, err := r.pool.Exec(ctx, `
-        UPDATE video_metadata SET sha256=$2, duration_seconds=$3, codec_video=$4, codec_audio=$5, width=$6, height=$7,updated_at=now() WHERE id=$1
+        UPDATE video_metadata SET sha256=$2, duration_seconds=$3, codec_video=$4, codec_audio=$5, width=$6, height=$7,updated_at=now() WHERE video_id=$1
     `, id, sha, dur, vcodec, acodec, w, h)
 	return err
 }
 func (r *VideoMetadataRepo) UpdateQualities(ctx context.Context, videoId string, qualities []string) error {
 	id, _ := uuid.Parse(videoId)
 	_, err := r.pool.Exec(ctx, `
-        UPDATE video_metadata SET available_qualities=$2, updated_at=now() WHERE id=$1
+        UPDATE video_metadata SET available_qualities=$2, updated_at=now() WHERE video_id=$1
     `, id, qualities)
 	return err
 }
 func (r *VideoMetadataRepo) UpdateManifest(ctx context.Context, videoId string, manifest string) error {
 	id, _ := uuid.Parse(videoId)
 	_, err := r.pool.Exec(ctx, `
-        UPDATE video_metadata SET manifest_path=$2,updated_at=now() WHERE id=$1
+        UPDATE video_metadata SET manifest_path=$2,updated_at=now() WHERE video_id=$1
     `, id, manifest)
 	return err
 }
@@ -47,7 +47,7 @@ func (r *VideoMetadataRepo) UpdateManifest(ctx context.Context, videoId string, 
 func (r *VideoMetadataRepo) UpdateThumbnail(ctx context.Context, videoId string, thumbnailKey string) error {
 	id, _ := uuid.Parse(videoId)
 	_, err := r.pool.Exec(ctx, `
-        UPDATE video_metadata SET thumbnail=$2, updated_at=now() WHERE id=$1
+        UPDATE video_metadata SET thumbnail=$2, updated_at=now() WHERE video_id=$1
     `, id, thumbnailKey)
 	return err
 }
