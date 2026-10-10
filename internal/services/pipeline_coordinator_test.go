@@ -231,3 +231,52 @@ func TestFailErrors(t *testing.T) {
 		t.Errorf("UpdateState error: %v", err)
 	}
 }
+
+func TestAdvanceFrom(t *testing.T) {
+	ctx := context.Background()
+	title := fakes.Ptr("Titled")
+	tests := []struct {
+		name      string
+		stage     int
+		status    models.VideoStatus
+		from      int
+		resume    bool
+		wantStage int
+		wantJobs  []int // stages of queued jobs
+	}{
+		{"at fromStage advances", 4, models.StatusThumbnailGenerated, 4, false, 5, []int{5}},
+		{"already one further, no resume: duplicate, no-op", 5, models.StatusTranscoded, 4, false, 5, nil},
+		{"already one further, resume: re-queues that stage", 5, models.StatusTranscoded, 4, true, 5, []int{5}},
+		{"resume onto the terminal stage queues nothing", 8, models.StatusPublished, 7, true, 8, nil},
+		{"two further with resume: stale, no-op", 6, models.StatusSegmentGenerated, 4, true, 6, nil},
+		{"behind fromStage: no-op", 3, models.StatusValid, 4, true, 3, nil},
+		{"failed video: no-op", 4, models.StatusPhase2Failed, 4, true, 4, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newPipeEnv()
+			id := e.seed(tt.stage, tt.status, title)
+			if err := e.pc.AdvanceFrom(ctx, id, tt.from, tt.resume); err != nil {
+				t.Fatal(err)
+			}
+			v, _ := e.videos.Get(ctx, id)
+			if v.Stage != tt.wantStage {
+				t.Errorf("stage = %d, want %d", v.Stage, tt.wantStage)
+			}
+			var got []int
+			for _, j := range e.jobs(t) {
+				got = append(got, j.Stage)
+			}
+			if len(got) != len(tt.wantJobs) || (len(got) == 1 && got[0] != tt.wantJobs[0]) {
+				t.Errorf("queued stages = %v, want %v", got, tt.wantJobs)
+			}
+		})
+	}
+
+	t.Run("missing video", func(t *testing.T) {
+		e := newPipeEnv()
+		if err := e.pc.AdvanceFrom(ctx, uuid.NewString(), 4, false); err == nil {
+			t.Error("want an error")
+		}
+	})
+}

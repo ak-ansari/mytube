@@ -94,8 +94,10 @@ func IsRetryable(err error) bool {
 		c := pgErr.Code
 		return strings.HasPrefix(c, "08") || strings.HasPrefix(c, "40") || strings.HasPrefix(c, "53") || strings.HasPrefix(c, "57P")
 	}
-	if resp := minio.ToErrorResponse(err); resp.StatusCode != 0 {
-		return resp.StatusCode >= 500 || resp.StatusCode == 429
+	// minio.ToErrorResponse doesn't unwrap, so match the type through any wrapping
+	var minioErr minio.ErrorResponse
+	if errors.As(err, &minioErr) && minioErr.StatusCode != 0 {
+		return minioErr.StatusCode >= 500 || minioErr.StatusCode == 429
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {

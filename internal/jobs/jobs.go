@@ -8,4 +8,6 @@ type JobPayload struct {
 	Status  models.VideoStatus `json:"status"`
 	// Attempt counts earlier failed runs of this stage (0 on the first run); the runner bumps it on retry.
 	Attempt int `json:"attempt,omitempty"`
+	// Resume marks a retry whose stage work already finished but moving on failed: only advance, don't rerun the handler.
+	Resume bool `json:"resume,omitempty"`
 }

@@ -3,15 +3,17 @@
 package e2e
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
 
-// TestShortClipFailsPhase1 uploads a 3s clip. The thumbnail stage seeks to 00:03, so ffmpeg writes
-// no frame and the stage fails. Per CLAUDE.md ("a failing stage handler is logged and the video is
-// marked failed") the video must end in phase_1_failed rather than hang, and confirm must then 400.
-func TestShortClipFailsPhase1(t *testing.T) {
+// TestShortClipPublishes uploads a 3s clip. The thumbnail stage used to seek to 00:03, past the end
+// of the clip, so ffmpeg wrote no frame; it now seeks to min(3s, duration/2) = 1s, so the clip gets
+// an auto thumbnail and goes all the way to published.
+func TestShortClipPublishes(t *testing.T) {
 	clip := makeClipOf(t, 3)
 	r := call(t, owner, http.MethodPost, "/videos/upload/presign", map[string]any{"file_name": "e2e-short.mp4", "size": fileSize(t, clip)})
 	expect(t, r, http.StatusCreated, "presign")
@@ -30,24 +32,35 @@ func TestShortClipFailsPhase1(t *testing.T) {
 	})
 	putFile(t, up.URL, clip)
 
-	deadline := time.Now().Add(90 * time.Second)
-	var d videoDetails
-	for time.Now().Before(deadline) {
-		_, d = details(t, owner, up.ID)
-		if d.Status == "phase_1_failed" || (d.Thumbnail != nil && *d.Thumbnail != "") {
-			break
+	poll(t, phase1Timeout, time.Second, "short clip valid with thumbnail", func() (bool, string) {
+		_, d := details(t, owner, up.ID)
+		if strings.HasSuffix(d.Status, "_failed") {
+			t.Fatalf("short clip failed in phase 1: %s (thumbnail seek should stay inside the clip)", d.Status)
 		}
-		time.Sleep(time.Second)
+		return d.Status == "valid" && d.Thumbnail != nil && *d.Thumbnail != "",
+			fmt.Sprintf("status=%s thumbnail=%s", d.Status, deref(d.Thumbnail))
+	})
+	d := mustDetails(t, owner, up.ID)
+	if want := "thumbnails/" + up.ID + "/" + up.ID + ".jpeg"; deref(d.Thumbnail) != want {
+		t.Errorf("auto thumbnail = %s, want %s", deref(d.Thumbnail), want)
 	}
-	switch {
-	case d.Status == "phase_1_failed":
-		t.Log("note: clips <= 3s can never be published (thumbnail is grabbed at 00:03)")
-		r = call(t, owner, http.MethodPost, "/videos/"+up.ID+"/confirm", map[string]any{"title": "short clip", "visibility": "public"})
-		expect(t, r, http.StatusBadRequest, "confirm after phase 1 failure")
-	case d.Thumbnail != nil && *d.Thumbnail != "":
-		t.Logf("short clip got a thumbnail (%s); thumbnail stage no longer seeks past the end", *d.Thumbnail)
-	default:
-		t.Skipf("BUG: 3s clip stuck at status=%q with no thumbnail after 90s; expected phase_1_failed "+
-			"(thumbnail at 00:03 fails, and the failure is not recorded — seen with workers built before commit a889799)", d.Status)
+	if code, _ := rawGet(t, d.ThumbnailURL); code != http.StatusOK {
+		t.Errorf("GET thumbnail_url = %d", code)
+	}
+
+	r = call(t, owner, http.MethodPost, "/videos/"+up.ID+"/confirm", map[string]any{"title": "short clip " + randWord(6), "visibility": "unlisted"})
+	expect(t, r, http.StatusOK, "confirm short clip")
+	poll(t, publishTimeout, 2*time.Second, "short clip published", func() (bool, string) {
+		_, d := details(t, owner, up.ID)
+		if strings.HasSuffix(d.Status, "_failed") {
+			t.Fatalf("short clip failed in phase 2: %s", d.Status)
+		}
+		return d.Status == "published" && d.ManifestURL != "", "status=" + d.Status
+	})
+	d = mustDetails(t, nil, up.ID) // unlisted: watchable by link
+	if d.ManifestURL == "" || len(d.AvailableQualities) == 0 {
+		t.Errorf("published short clip: manifest_url=%q qualities=%v", d.ManifestURL, d.AvailableQualities)
+	} else if code, body := rawGet(t, d.ManifestURL); code != http.StatusOK || !strings.HasPrefix(string(body), "#EXTM3U") {
+		t.Errorf("GET manifest = %d", code)
 	}
 }

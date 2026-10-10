@@ -76,9 +76,10 @@ func TestNewPool_AppliesAllMigrations(t *testing.T) {
 	}
 
 	columns := map[string][]string{
-		"users":          {"email", "description"},     // 004
-		"videos":         {"views", "stage", "status"}, // 002, 005
-		"video_metadata": {"available_qualities"},      // 003
+		"users":            {"email", "description"},                                                                         // 004
+		"videos":           {"views", "stage", "status"},                                                                     // 002, 005
+		"video_metadata":   {"available_qualities"},                                                                          // 003
+		"dead_letter_jobs": {"id", "source", "video_id", "stage", "attempts", "retryable", "error", "payload", "created_at"}, // 007
 	}
 	for table, cols := range columns {
 		for _, col := range cols {
@@ -96,6 +97,21 @@ func TestNewPool_AppliesAllMigrations(t *testing.T) {
 	}
 	if !scalar[bool](t, pool, `SELECT indisunique FROM pg_index WHERE indexrelid = 'public.idx_video_metadata_video_id'::regclass`) {
 		t.Error("idx_video_metadata_video_id should be unique")
+	}
+
+	// 007: dead-letter indexes, and no foreign key so entries outlive their video
+	for _, idx := range []string{"idx_dead_letter_jobs_video_id", "idx_dead_letter_jobs_created_at"} {
+		if !scalar[bool](t, pool, `SELECT to_regclass($1) IS NOT NULL`, "public."+idx) {
+			t.Errorf("index %s missing", idx)
+		}
+	}
+	if n := scalar[int64](t, pool, `SELECT COUNT(*) FROM pg_constraint WHERE conrelid = 'public.dead_letter_jobs'::regclass AND contype = 'f'`); n != 0 {
+		t.Errorf("dead_letter_jobs has %d foreign keys, want none", n)
+	}
+
+	// 008: updated_at trigger on videos
+	if !scalar[bool](t, pool, `SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_videos_touch_updated_at' AND tgrelid = 'public.videos'::regclass AND NOT tgisinternal)`) {
+		t.Error("trigger trg_videos_touch_updated_at missing")
 	}
 
 	// 006 lifted the btree size limit on titles: a > 2.7KB title must insert fine

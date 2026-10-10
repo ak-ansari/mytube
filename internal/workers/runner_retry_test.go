@@ -306,8 +306,8 @@ func TestAdvanceErrorAfterSuccessfulHandlerIsRetried(t *testing.T) {
 
 	e.process(t) // no error returned: the failure went through retry
 	d := e.delayedJobs(t)
-	if len(d) != 1 || d[0].Stage != 4 || d[0].Attempt != 1 {
-		t.Fatalf("delayed = %+v, want stage 4 attempt 1", d)
+	if len(d) != 1 || d[0].Stage != 4 || d[0].Attempt != 1 || !d[0].Resume {
+		t.Fatalf("delayed = %+v, want stage 4 attempt 1 resume", d)
 	}
 	if s, st := e.stage(t, id); s != 4 || st != models.StatusThumbnailGenerated {
 		t.Errorf("video at %d/%s", s, st)
@@ -317,8 +317,8 @@ func TestAdvanceErrorAfterSuccessfulHandlerIsRetried(t *testing.T) {
 	e.clock.Advance(time.Minute)
 	e.promote(t)
 	e.process(t)
-	if e.calls[4] != 2 {
-		t.Errorf("handler ran %d times, want 2 (rerun on retry)", e.calls[4])
+	if e.calls[4] != 1 {
+		t.Errorf("handler ran %d times, want 1 (a resume retry only advances)", e.calls[4])
 	}
 	if s, _ := e.stage(t, id); s != 5 {
 		t.Errorf("stage = %d, want 5", s)
@@ -342,13 +342,9 @@ func TestAdvanceErrorAfterSuccessfulHandlerIsRetried(t *testing.T) {
 	})
 }
 
-// BUG: Advance is not atomic with the enqueue of the next job. If AdvanceState succeeds but the
-// Enqueue fails, the runner retries the *finished* stage; its Advance then reads the new stage
-// from the DB and advances again, skipping the next stage's handler entirely.
+// Advance is not atomic with the enqueue of the next job. If AdvanceState commits but the Enqueue
+// fails, the resume retry must re-queue the next stage's job, not advance again (which would skip it).
 func TestAdvanceEnqueueFailureDoesNotSkipAStage(t *testing.T) {
-	t.Skip("BUG: internal/workers/runner.go dispatch retries the finished stage after Advance fails; when AdvanceState " +
-		"already committed (only the Enqueue failed), the rerun's Advance moves the video one more stage and the " +
-		"skipped stage's handler never runs (here: segment, so a video can publish without HLS segments)")
 	e := newRetryEnv(t, testPolicy)
 	id := e.seed(4, models.StatusThumbnailGenerated, fakes.Ptr("t"))
 	e.enqueue(t, jobs.JobPayload{VideoID: id.String(), Stage: 4})
@@ -360,9 +356,28 @@ func TestAdvanceEnqueueFailureDoesNotSkipAStage(t *testing.T) {
 		e.promote(t)
 		e.process(t)
 	}
-	if e.calls[5] != 1 {
+	if e.calls[5] != 1 || e.calls[4] != 1 {
 		s, st := e.stage(t, id)
-		t.Errorf("stage 5 (segment) handler ran %d times, want 1; video at %d/%s", e.calls[5], s, st)
+		t.Errorf("stage 4 ran %d, stage 5 (segment) ran %d times, want 1 each; video at %d/%s", e.calls[4], e.calls[5], s, st)
+	}
+	if s, st := e.stage(t, id); s != 8 || st != models.StatusPublished {
+		t.Errorf("video at %d/%s, want 8/published", s, st)
+	}
+	if len(e.dlq.All()) != 0 {
+		t.Errorf("dead letters = %+v", e.dlq.All())
+	}
+}
+
+func TestDuplicateJobDoesNotAdvanceTwice(t *testing.T) {
+	e := newRetryEnv(t, testPolicy)
+	id := e.seed(4, models.StatusThumbnailGenerated, fakes.Ptr("t"))
+	p := jobs.JobPayload{VideoID: id.String(), Stage: 4}
+	e.enqueue(t, p)
+	e.enqueue(t, p) // e.g. a duplicate delivery
+	e.process(t)    // runs stage 4, advances to 5, queues stage 5
+	e.process(t)    // the duplicate: the handler reruns but the video is no longer at 4
+	if s, _ := e.stage(t, id); s != 5 {
+		t.Errorf("stage = %d, want 5 (the duplicate must not advance again)", s)
 	}
 }
 
@@ -435,13 +450,9 @@ func TestShutdownRequeuesWithoutCountingAnAttempt(t *testing.T) {
 	})
 }
 
-// BUG: on shutdown exec.CommandContext kills ffmpeg and returns *exec.ExitError "signal: killed",
-// which does not wrap context.Canceled, so the shutdown branch is skipped and IsRetryable
-// classifies the kill as a permanent ffmpeg failure.
+// On shutdown exec.CommandContext kills ffmpeg and returns *exec.ExitError "signal: killed", which
+// doesn't wrap context.Canceled; the runner must still treat it as an interruption, not a failure.
 func TestShutdownDuringFFmpegRequeues(t *testing.T) {
-	t.Skip("BUG: internal/workers/runner.go handleFailure only treats errors.Is(cause, context.Canceled) as shutdown; a " +
-		"killed ffmpeg returns *exec.ExitError(\"signal: killed\") (ctx.Err() is not wrapped), and IsRetryable calls a " +
-		"non-network ExitError permanent, so stopping the worker mid-transcode dead-letters the job and fails the video")
 	if _, err := exec.LookPath("sleep"); err != nil {
 		t.Skip("sleep not available")
 	}
@@ -650,9 +661,35 @@ func TestBucketEventRetryableFailureBacksOffThenDeadLetters(t *testing.T) {
 		j.Attempts != 3 || !j.Retryable || j.Payload != data || !strings.Contains(j.Error, "retries exhausted after 3 attempts") {
 		t.Errorf("dead letter = %+v", j)
 	}
-	// bucket-event dead letters do not fail the video (nothing marks it): it stays upload_pending
-	if s, st := e.stage(t, id); s != 1 || st != models.StatusUploadPending {
-		t.Errorf("video at %d/%s", s, st)
+	// the video would otherwise wait at upload_pending forever
+	if s, st := e.stage(t, id); s != 1 || st != models.StatusPhase1Failed {
+		t.Errorf("video at %d/%s, want 1/phase_1_failed", s, st)
+	}
+}
+
+// The upload event's Advance committed (1 -> 2) but queueing validate failed: the retried event must
+// queue validate, not advance the video again (which would skip validation).
+func TestBucketEventRetryAfterCommittedAdvanceQueuesValidate(t *testing.T) {
+	e := newRetryEnv(t, testPolicy)
+	id := e.seed(1, models.StatusUploadPending, nil)
+	e.cache.PutHash(bucketHash, "k", sampleEventFor(t, id))
+	e.queue.Errs.Set("Enqueue", errBoom)
+	e.bucketPoll(t)
+	if s, _ := e.stage(t, id); s != 2 {
+		t.Fatalf("stage = %d, want 2 (AdvanceState committed)", s)
+	}
+	e.queue.Errs.Set("Enqueue", nil)
+	e.clock.Advance(time.Minute)
+	e.bucketPoll(t)
+	q := decodeJobs(t, e.queue.Messages(qName))
+	if len(q) != 1 || q[0].Stage != 2 {
+		t.Fatalf("queue = %+v, want the stage 2 (validate) job", q)
+	}
+	if s, _ := e.stage(t, id); s != 2 {
+		t.Errorf("stage = %d, want 2", s)
+	}
+	if e.cache.HashLen(bucketHash) != 0 || len(e.dlq.All()) != 0 {
+		t.Error("event not cleared, or dead-lettered")
 	}
 }
 

@@ -3,7 +3,6 @@ package workers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -229,7 +228,14 @@ func (r *Runner) processBucketEvent(ctx context.Context, key, data string) {
 		err = fmt.Errorf("resolve video for bucket event: %w", err)
 	} else if shouldProcess {
 		fmt.Printf(">>>> task picked from Bucket events key:%s >>> \n\n", key)
-		if aerr := r.pc.Advance(ctx, id); aerr != nil {
+		advance := r.pc.Advance
+		if r.retry != nil {
+			// the upload moves the video off stage 1 only; a retried event re-queues validate if that already happened
+			advance = func(ctx context.Context, id string) error {
+				return r.pc.AdvanceFrom(ctx, id, 1, state.Attempts > 0)
+			}
+		}
+		if aerr := advance(ctx, id); aerr != nil {
 			err = fmt.Errorf("advance video from bucket event: %w", aerr)
 		}
 	}
@@ -249,6 +255,14 @@ func (r *Runner) processBucketEvent(ctx context.Context, key, data string) {
 			}
 		}
 		r.deadLetter(ctx, models.DeadLetterSourceBucketEvent, id, nil, attempts, retryable, err, data)
+		// a known video would otherwise wait at upload_pending forever
+		if id != "" {
+			if ferr := r.pc.Fail(context.WithoutCancel(ctx), id, err.Error()); ferr != nil {
+				r.log.Warn("Failed to mark video as failed after dead-lettering its bucket event",
+					logger.String("videoId", id),
+					logger.Error(ferr))
+			}
+		}
 	} else if err != nil {
 		r.log.Error(fmt.Sprintf("failed to process bucket event key %s, dropping event", key),
 			logger.String("videoId", id),
@@ -268,6 +282,12 @@ func (r *Runner) processBucketEvent(ctx context.Context, key, data string) {
 
 // dispatch runs the stage handler and advances the video. Failures go to handleFailure.
 func (r *Runner) dispatch(ctx context.Context, payload *jobs.JobPayload) error {
+	if payload.Resume && r.retry != nil {
+		if err := r.pc.AdvanceFrom(ctx, payload.VideoID, payload.Stage, true); err != nil {
+			r.handleFailure(ctx, payload, fmt.Errorf("advance after stage %d: %w", payload.Stage, err))
+		}
+		return nil
+	}
 	handler, err := r.hr.GetHandler(payload.Stage)
 	if err != nil {
 		r.handleFailure(ctx, payload, jobs.Permanent(err))
@@ -277,12 +297,15 @@ func (r *Runner) dispatch(ctx context.Context, payload *jobs.JobPayload) error {
 		r.handleFailure(ctx, payload, err)
 		return nil
 	}
-	if err := r.pc.Advance(ctx, payload.VideoID); err != nil {
-		if r.retry == nil {
-			return err
-		}
-		// the stage's work is done but moving on failed; handlers are idempotent, so rerunning the stage is safe
-		r.handleFailure(ctx, payload, fmt.Errorf("advance after stage %d: %w", payload.Stage, err))
+	if r.retry == nil {
+		return r.pc.Advance(ctx, payload.VideoID)
+	}
+	// only from this job's stage, so a duplicate job can't move the video twice
+	if err := r.pc.AdvanceFrom(ctx, payload.VideoID, payload.Stage, false); err != nil {
+		// the stage's work is done; retry just the move on (AdvanceState may have committed before the enqueue failed)
+		resume := *payload
+		resume.Resume = true
+		r.handleFailure(ctx, &resume, fmt.Errorf("advance after stage %d: %w", payload.Stage, err))
 	}
 	return nil
 }
@@ -296,8 +319,9 @@ func (r *Runner) handleFailure(ctx context.Context, payload *jobs.JobPayload, ca
 	// enqueue/dead-letter/fail must still happen when the handler was interrupted by shutdown
 	bg := context.WithoutCancel(ctx)
 
-	// shutdown interrupted the stage: put it back unchanged (not a failed attempt) so the next start resumes it
-	if ctx.Err() != nil && errors.Is(cause, context.Canceled) {
+	// shutdown interrupted the stage: put it back unchanged (not a failed attempt) so the next start resumes it.
+	// Checked on ctx, not cause: a killed ffmpeg reports "signal: killed", which doesn't wrap context.Canceled.
+	if ctx.Err() != nil {
 		if err := r.enqueueJob(bg, payload, 0); err == nil {
 			r.log.Info("Stage interrupted by shutdown, re-queued",
 				logger.String("videoId", payload.VideoID),

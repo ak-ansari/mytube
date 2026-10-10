@@ -105,13 +105,21 @@ func TestVideoLifecycle(t *testing.T) {
 	expect(t, r, http.StatusOK, "confirm")
 
 	// ---- 5. wait for published ----
-	poll(t, publishTimeout, 2*time.Second, "status published", func() (bool, string) {
+	// stage 7 (checksum done) reports "checksum"; only stage 8 reports "published"
+	phase2 := map[string]bool{"valid": true, "thumbnail_generated": true, "transcoded": true, "segment_generated": true, "checksum": true, "published": true}
+	seen := map[string]bool{}
+	poll(t, publishTimeout, 500*time.Millisecond, "status published", func() (bool, string) {
 		_, d := details(t, owner, id)
 		if strings.HasSuffix(d.Status, "_failed") {
 			t.Fatalf("pipeline failed in phase 2: %s", d.Status)
 		}
+		if !phase2[d.Status] {
+			t.Errorf("unexpected phase 2 status %q", d.Status)
+		}
+		seen[d.Status] = true
 		return d.Status == "published" && d.ManifestURL != "", "status=" + d.Status
 	})
+	t.Logf("phase 2 statuses observed: %v", seen)
 	d = mustDetails(t, nil, id)
 	if deref(d.Title) != title {
 		t.Errorf("title = %q, want trimmed %q", deref(d.Title), title)
@@ -135,6 +143,7 @@ func TestVideoLifecycle(t *testing.T) {
 	t.Run("StudioEdit", func(t *testing.T) { testStudioEdit(t, id) })
 	t.Run("Visibility", func(t *testing.T) { testVisibility(t, id) })
 	t.Run("Validation", func(t *testing.T) { testVideoValidation(t, id) })
+	t.Run("Files", func(t *testing.T) { testFiles(t, id) })
 }
 
 // ---------- subtests ----------
@@ -569,6 +578,11 @@ func testVideoValidation(t *testing.T, id string) {
 	expect(t, r, http.StatusBadRequest, "details bad uuid")
 	r = call(t, nil, http.MethodGet, "/videos/"+uuid.NewString()+"/details", nil)
 	expect(t, r, http.StatusNotFound, "details unknown id")
+	// legacy endpoints map a missing row to 404 (was 500)
+	r = call(t, nil, http.MethodGet, "/videos/"+uuid.NewString(), nil)
+	expect(t, r, http.StatusNotFound, "legacy GET /videos/:id unknown id")
+	r = call(t, nil, http.MethodGet, "/video-meta/"+uuid.NewString(), nil)
+	expect(t, r, http.StatusNotFound, "GET /video-meta/:id unknown id")
 	r = call(t, nil, http.MethodGet, "/videos/not-a-uuid/related", nil)
 	expect(t, r, http.StatusBadRequest, "related bad uuid")
 	r = call(t, nil, http.MethodGet, "/videos/not-a-uuid/comments", nil)
@@ -621,6 +635,112 @@ func testVideoValidation(t *testing.T, id string) {
 	}
 }
 
+// testFiles covers /files/presign, /files/url and /videos/url: only thumbnail and avatar images
+// are signed, uploads only into the caller's own folders, and video files are never handed out.
+func testFiles(t *testing.T, id string) {
+	presign := func(as *user, key string, size int64) apiResp {
+		t.Helper()
+		return call(t, as, http.MethodGet, fmt.Sprintf("/files/presign?key=%s&size=%d", url.QueryEscape(key), size), nil)
+	}
+	getURL := func(path, key string) apiResp {
+		t.Helper()
+		return call(t, nil, http.MethodGet, path+"?key="+url.QueryEscape(key), nil)
+	}
+
+	// ---- upload a custom thumbnail for the owned video and use it ----
+	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0}, 64)...)
+	thumbKey := "thumbnails/" + id + "/" + uuid.NewString() + ".png"
+	r := presign(owner, thumbKey, int64(len(png)))
+	expect(t, r, http.StatusOK, "presign own thumbnail")
+	var signed struct {
+		Key string `json:"key"`
+		URL string `json:"url"`
+	}
+	r.decode(t, &signed)
+	if signed.Key != thumbKey || signed.URL == "" {
+		t.Fatalf("presign = %+v", signed)
+	}
+	req, _ := http.NewRequest(http.MethodPut, signed.URL, bytes.NewReader(png))
+	req.ContentLength = int64(len(png))
+	req.Header.Set("Content-Type", "image/png")
+	if resp, err := httpClient.Do(req); err != nil {
+		t.Fatalf("PUT thumbnail: %v", err)
+	} else {
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("PUT thumbnail = %d", resp.StatusCode)
+		}
+	}
+	r = call(t, owner, http.MethodPut, "/videos/"+id, map[string]any{"thumbnail": thumbKey})
+	expect(t, r, http.StatusOK, "set custom thumbnail")
+	if d := mustDetails(t, nil, id); deref(d.Thumbnail) != thumbKey {
+		t.Errorf("thumbnail = %s, want %s", deref(d.Thumbnail), thumbKey)
+	} else if code, _ := rawGet(t, d.ThumbnailURL); code != http.StatusOK {
+		t.Errorf("GET custom thumbnail_url = %d", code)
+	}
+	for _, path := range []string{"/files/url", "/videos/url"} {
+		r = getURL(path, thumbKey)
+		expect(t, r, http.StatusOK, path+" thumbnail")
+		var u string
+		r.decode(t, &u)
+		if code, body := rawGet(t, u); code != http.StatusOK || !bytes.Equal(body, png) {
+			t.Errorf("%s thumbnail GET = %d (%d bytes)", path, code, len(body))
+		}
+	}
+
+	// ---- avatars: own folder only ----
+	r = presign(owner, "avatars/"+owner.id+"/"+uuid.NewString()+".webp", 2048)
+	expect(t, r, http.StatusOK, "presign own avatar")
+	r = presign(owner, "avatars/"+uuid.NewString()+"/a.png", 2048)
+	expect(t, r, http.StatusBadRequest, "presign someone else's avatar")
+	r = call(t, owner, http.MethodPut, "/users/me", map[string]any{"avatar": "avatars/" + uuid.NewString() + "/a.png"})
+	expect(t, r, http.StatusBadRequest, "profile avatar outside own folder")
+	r = call(t, owner, http.MethodPut, "/users/me", map[string]any{"avatar": "originals/" + id + "/original.mp4"})
+	expect(t, r, http.StatusBadRequest, "profile avatar pointing at a video original")
+
+	// ---- presign restrictions ----
+	if u := other; u != nil {
+		r = presign(u, "thumbnails/"+id+"/x.png", 10)
+		expect(t, r, http.StatusForbidden, "presign thumbnail of someone else's video")
+	} else {
+		t.Log("non-owner presign check skipped: " + otherSkipReason)
+	}
+	for name, tc := range map[string]struct {
+		key  string
+		size int64
+		want int
+	}{
+		"unknown video":      {"thumbnails/" + uuid.NewString() + "/x.png", 10, http.StatusNotFound},
+		"original":           {"originals/" + id + "/original.mp4", 10, http.StatusBadRequest},
+		"segments":           {"segments/" + id + "/master.m3u8", 10, http.StatusBadRequest},
+		"arbitrary key":      {"x", 10, http.StatusBadRequest},
+		"no video folder":    {"thumbnails/x.png", 10, http.StatusBadRequest},
+		"nested":             {"thumbnails/" + id + "/a/x.png", 10, http.StatusBadRequest},
+		"dot-dot":            {"thumbnails/" + id + "/../x.png", 10, http.StatusBadRequest},
+		"not an image":       {"thumbnails/" + id + "/x.mp4", 10, http.StatusBadRequest},
+		"non-canonical uuid": {"thumbnails/" + strings.ToUpper(id) + "/x.png", 10, http.StatusBadRequest},
+		"zero size":          {"thumbnails/" + id + "/x.png", 0, http.StatusBadRequest},
+		"over 10MB":          {"thumbnails/" + id + "/x.png", 10<<20 + 1, http.StatusBadRequest},
+	} {
+		r = presign(owner, tc.key, tc.size)
+		expect(t, r, tc.want, "presign "+name)
+	}
+
+	// ---- downloads: only thumbnail/avatar images ----
+	for _, key := range []string{
+		"originals/" + id + "/original.mp4",
+		"transcoded/" + id + "/240p.mp4",
+		"segments/" + id + "/master.m3u8",
+		"thumbnails/" + id + "/../../originals/" + id + "/original.mp4",
+		"k",
+	} {
+		for _, path := range []string{"/files/url", "/videos/url"} {
+			r = getURL(path, key)
+			expect(t, r, http.StatusBadRequest, path+" "+key)
+		}
+	}
+}
+
 // ---------- cleanup ----------
 
 func deleteAndVerify(t *testing.T, id, word string) {
@@ -662,9 +782,8 @@ func ffmpegPath(t *testing.T) string {
 	return ""
 }
 
-// makeClip renders a 5s 320x240 test pattern with a sine tone. It must be longer than 3s:
-// the thumbnail stage grabs the frame at 00:03 (media.FFM.CreateThumbnail), so a <=3s clip
-// gets no thumbnail (see TestShortClipFailsPhase1).
+// makeClip renders a 5s 320x240 test pattern with a sine tone. (The thumbnail stage grabs the
+// frame at min(3s, duration/2), so short clips work too; see TestShortClipPublishes.)
 func makeClip(t *testing.T) string {
 	t.Helper()
 	return makeClipOf(t, 5)

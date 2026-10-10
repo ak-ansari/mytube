@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ak-ansari/mytube/internal/jobs"
+	"github.com/ak-ansari/mytube/internal/models"
 	"github.com/ak-ansari/mytube/internal/queue"
 	"github.com/ak-ansari/mytube/internal/repository"
 )
@@ -60,22 +61,49 @@ func (pc *PipelineCoordinator) Advance(ctx context.Context, id string) error {
 		return nil
 	}
 
-	// If terminal, do nothing more
-	if nextStage.IsTerminal {
+	return pc.enqueue(ctx, id, nextStage)
+}
+
+// enqueue queues the job that runs stage (nothing for a terminal stage).
+func (pc *PipelineCoordinator) enqueue(ctx context.Context, id string, stage *models.Stage) error {
+	if stage.IsTerminal {
 		return nil
 	}
-
-	// Enqueue next work item
 	payload, err := json.Marshal(jobs.JobPayload{
 		VideoID: id,
-		Stage:   nextStage.Ordering,
-		Status:  nextStage.Name,
+		Stage:   stage.Ordering,
+		Status:  stage.Name,
 	})
 	if err != nil {
 		return err
 	}
-
 	return pc.q.Enqueue(ctx, pc.qName, payload)
+}
+
+// AdvanceFrom advances the video only if it is still at fromStage, so a duplicate or stale caller can't
+// move it twice. With resume set (a retry after a failed Advance) and the video already one stage
+// further, the earlier AdvanceState committed but enqueuing the next job failed: queue that job again.
+// Failed videos and anything further along are left alone.
+func (pc *PipelineCoordinator) AdvanceFrom(ctx context.Context, id string, fromStage int, resume bool) error {
+	v, err := pc.repo.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if isFailed(v.Status) {
+		return nil
+	}
+	switch {
+	case v.Stage == fromStage:
+		return pc.Advance(ctx, id)
+	case resume && v.Stage == fromStage+1:
+		current, err := pc.sm.Get(v.Stage)
+		if err != nil {
+			return err
+		}
+		return pc.enqueue(ctx, id, current)
+	default:
+		return nil
+	}
 }
 
 // Fail is called when a worker fails the stage.
