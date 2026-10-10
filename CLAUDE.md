@@ -17,7 +17,7 @@ All commands run from the repo root (migrations are loaded from `./migrations` r
 ```bash
 cp configs/config.example.yaml configs/config.yaml   # first time; config.yaml is gitignored
 make               # docker-compose up (postgres, redis, minio, nginx, elasticsearch, kibana, keycloak) + MinIO bucket (needs `mc`)
-make keycloak-dev  # once per fresh Keycloak volume: lets the admin console work over http
+make keycloak-dev  # once per Keycloak volume: admin console over http + realm loginTheme=mytube
 make run-api       # API on :8080
 make run-worker    # pipeline worker (needs ffmpeg/ffprobe on PATH)
 make down
@@ -44,11 +44,12 @@ The MinIO bucket is **private**. There are three ways in:
 
 ## Auth (Keycloak)
 
-- Realm `mytube` is imported from `deployments/keycloak/mytube-realm.json` on first start: public client `mytube-frontend` (PKCE, redirect `http://localhost:5173/*`, direct-access grants on for curl testing), self-registration enabled, demo user **demo / demo123**.
+- Realm `mytube` is imported from `deployments/keycloak/import/mytube-realm.json` on first start: public client `mytube-frontend` (PKCE, redirect `http://localhost:5173/*`, direct-access grants on for curl testing), self-registration enabled, demo user **demo / demo123**.
 - `internal/auth/keycloak.go` verifies RS256 access tokens against the realm JWKS (`KEYCLOAK.URL/realms/REALM`), checks `iss` and `azp == CLIENT_ID`. Token `iss` must match `KEYCLOAK.URL` exactly, so frontend and API must both use `http://localhost:8180`.
 - `middleware.Authenticate` (on all of `/api`): no header → anonymous; invalid token → 401; valid → `UserService.SyncFromToken` upserts `users` (id = Keycloak `sub`) and sets `c.Get("user")` (`*models.User`).
 - `middleware.RequireUser()` guards write routes; `middleware.RequireVideoOwner(catalog)` guards `/:id` routes by uploader. Helpers: `middleware.CurrentUser(c)`, `CurrentUserID(c)` (nil when anonymous).
 - The old hardcoded `middleware.AuthMiddleware()` stub is no longer wired.
+- **Login theme `mytube`** (`deployments/keycloak/themes/mytube/login`, mounted into the container). It extends `keycloak.v2` (PatternFly 5) and is always dark, matching the app palette. `template.ftl` is a copy of keycloak.v2's with myTube header, subtitle, Roboto, favicon and footer added. `resources/css/mytube.css` restyles via PatternFly CSS variables; `messages/messages_en.properties` overrides the copy text. `start-dev` disables theme caching, so edits show on refresh. The realm JSON sets `loginTheme: mytube` for fresh volumes; existing volumes need `make keycloak-dev`. When upgrading Keycloak, re-diff `template.ftl` against the new keycloak.v2 one.
 - Token for curl: `curl -s -X POST localhost:8180/realms/mytube/protocol/openid-connect/token -d grant_type=password -d client_id=mytube-frontend -d username=demo -d password=demo123`
 
 ## Layout (golang-standards/project-layout)
@@ -64,7 +65,7 @@ internal/                all application code (not importable from outside the m
 pkg/                     reusable, app-agnostic clients (logger, elastic, redis)
 migrations/              goose SQL (applied on startup from ./migrations)
 configs/                 config.example.yaml (+ your gitignored config.yaml)
-deployments/             docker-compose.yml (project name pinned to "mytube"), nginx/templates/ (envsubst-rendered), keycloak/ realm import
+deployments/             docker-compose.yml (project name pinned to "mytube"), nginx/templates/ (envsubst-rendered), keycloak/ (import/ realm JSON, themes/mytube login theme)
 docs/                    todo.txt
 ```
 

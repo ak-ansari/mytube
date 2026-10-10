@@ -27,7 +27,7 @@ setup-bucket:
 # Keycloak's master realm requires HTTPS for non-localhost callers; through Docker's NAT the host counts as
 # external, which blocks the admin console at http://localhost:8180. Run once after Keycloak starts (admin/admin).
 keycloak-dev:
-	@docker exec keycloak bash -c '/opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin && /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE'
+	@docker exec keycloak bash -c '/opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin && /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE && /opt/keycloak/bin/kcadm.sh update realms/mytube -s loginTheme=mytube'
 	@echo "✅ Keycloak admin console: http://localhost:8180 (admin/admin)"
 
 run-api:

@@ -13,7 +13,7 @@
   "accessTokenLifespan": 900,
   "ssoSessionIdleTimeout": 86400,
   "ssoSessionMaxLifespan": 604800,
-  "loginTheme": "keycloak.v2",
+  "loginTheme": "mytube",
   "clients": [
     {
       "clientId": "mytube-frontend",

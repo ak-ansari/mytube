@@ -96,7 +96,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.4
     container_name: keycloak
-    # dev mode (embedded H2, http); realm "mytube" is imported from ./keycloak on first start
+    # dev mode (embedded H2, http); realm "mytube" is imported from ./keycloak/import on first start
     command: ["start-dev", "--import-realm", "--http-port=8080"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -105,7 +105,9 @@ services:
       - "8180:8080"
     volumes:
       - keycloak_data:/opt/keycloak/data
-      - ./keycloak:/opt/keycloak/data/import:ro
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+      # myTube login theme (start-dev disables theme caching, so edits show up on refresh)
+      - ./keycloak/themes/mytube:/opt/keycloak/themes/mytube:ro
     networks:
       - internal
 
