@@ -22,7 +22,7 @@ func TestStateMachineGet(t *testing.T) {
 		{4, models.StatusThumbnailGenerated, false},
 		{5, models.StatusTranscoded, false},
 		{6, models.StatusSegmentGenerated, false},
-		{7, models.StatusPublished, false},
+		{7, models.StatusChecksum, false},
 		{8, models.StatusPublished, false},
 		{9, "", true},
 		{-1, "", true},
@@ -118,6 +118,8 @@ func TestStateMachineGetByName(t *testing.T) {
 		{models.StatusThumbnailGenerated, 4},
 		{models.StatusTranscoded, 5},
 		{models.StatusSegmentGenerated, 6},
+		{models.StatusChecksum, 7},
+		{models.StatusPublished, 8},
 	}
 	for _, tt := range tests {
 		s, err := sm.GetByName(tt.name)
@@ -125,27 +127,30 @@ func TestStateMachineGetByName(t *testing.T) {
 			t.Errorf("GetByName(%s) = %+v, %v", tt.name, s, err)
 		}
 	}
-	for _, unknown := range []models.VideoStatus{models.StatusChecksum, models.StatusDone, models.StatusPhase1Failed, "nope"} {
+	for _, unknown := range []models.VideoStatus{models.StatusDone, models.StatusPhase1Failed, "nope"} {
 		if _, err := sm.GetByName(unknown); !errors.Is(err, services.ErrorInvalidStage) {
 			t.Errorf("GetByName(%s) err = %v", unknown, err)
 		}
 	}
 }
 
+// Stage names are unique, so GetByName (which ranges over a map) is deterministic; "published" is the terminal stage 8.
 func TestStateMachineGetByNamePublishedIsDeterministic(t *testing.T) {
-	t.Skip("BUG: models.Stages has two stages named \"published\" (7, non-terminal, and 8, terminal); " +
-		"VideoStateMachine.GetByName ranges over the map, so GetByName(StatusPublished) returns stage 7 or 8 at random " +
-		"(internal/services/video_state_machine_service.go:35, internal/models/stage.go:53-64). GetByName is currently unused.")
+	names := map[models.VideoStatus]int{}
+	for order, st := range models.Stages {
+		if prev, dup := names[st.Name]; dup {
+			t.Errorf("stages %d and %d share the name %q", prev, order, st.Name)
+		}
+		names[st.Name] = order
+	}
 	sm := services.NewVideoStateMachine()
-	seen := map[int]bool{}
 	for i := 0; i < 500; i++ {
 		s, err := sm.GetByName(models.StatusPublished)
 		if err != nil {
 			t.Fatal(err)
 		}
-		seen[s.Ordering] = true
-	}
-	if len(seen) != 1 {
-		t.Fatalf("GetByName(published) returned different stages: %v", seen)
+		if s.Ordering != 8 || !s.IsTerminal {
+			t.Fatalf("GetByName(published) = %+v, want terminal stage 8", s)
+		}
 	}
 }

@@ -120,6 +120,12 @@ func TestConfirmVideoValidation(t *testing.T) {
 	longDesc.Description = strings.Repeat("d", 5001)
 	foreignThumb := confirmDto("Title")
 	foreignThumb.Thumbnail = "thumbnails/" + uuid.NewString() + "/a.png"
+	longHindiDesc := confirmDto("Title")
+	longHindiDesc.Description = strings.Repeat("न", 5001)
+	nestedThumb := confirmDto("Title")
+	nestedThumb.Thumbnail = "thumbnails/" + ok.String() + "/x/a.png"
+	videoThumb := confirmDto("Title")
+	videoThumb.Thumbnail = "thumbnails/" + ok.String() + "/a.mp4"
 
 	tests := []struct {
 		name string
@@ -130,6 +136,11 @@ func TestConfirmVideoValidation(t *testing.T) {
 		{"bad id", "not-a-uuid", confirmDto("Title"), services.ErrBadRequest},
 		{"short title", ok.String(), confirmDto("  ab  "), services.ErrBadRequest},
 		{"long title", ok.String(), confirmDto(strings.Repeat("t", 101)), services.ErrBadRequest},
+		{"long hindi title (101 runes)", ok.String(), confirmDto(strings.Repeat("न", 101)), services.ErrBadRequest},
+		{"short hindi title (2 runes, 6 bytes)", ok.String(), confirmDto("नम"), services.ErrBadRequest},
+		{"long hindi description", ok.String(), longHindiDesc, services.ErrBadRequest},
+		{"nested thumbnail", ok.String(), nestedThumb, services.ErrBadRequest},
+		{"thumbnail not an image", ok.String(), videoThumb, services.ErrBadRequest},
 		{"long description", ok.String(), longDesc, services.ErrBadRequest},
 		{"foreign thumbnail", ok.String(), foreignThumb, services.ErrBadRequest},
 		{"missing video", uuid.NewString(), confirmDto("Title"), services.ErrNotFound},
@@ -188,6 +199,39 @@ func TestConfirmVideo(t *testing.T) {
 			}
 		})
 	}
+	t.Run("lengths count runes: 40-character hindi title, 5000-character description", func(t *testing.T) {
+		e := newVideoEnv()
+		id := e.seed(2, models.StatusUploaded, nil)
+		title := strings.Repeat("न", 40) // 40 runes, 120 bytes
+		in := confirmDto(title)
+		in.Description = strings.Repeat("न", 5000)
+		v, err := e.svc.ConfirmVideo(ctx, id.String(), in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if *v.Title != title {
+			t.Errorf("title = %q", *v.Title)
+		}
+		if _, err := e.svc.ConfirmVideo(ctx, e.seed(2, models.StatusUploaded, nil).String(), confirmDto(strings.Repeat("न", 100))); err != nil {
+			t.Errorf("100-rune title: %v", err)
+		}
+	})
+	t.Run("description is trimmed", func(t *testing.T) {
+		e := newVideoEnv()
+		id := e.seed(2, models.StatusUploaded, nil)
+		in := confirmDto("Title")
+		in.Description = "  \n hello world \t "
+		v, err := e.svc.ConfirmVideo(ctx, id.String(), in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if *v.Description != "hello world" {
+			t.Errorf("description = %q", *v.Description)
+		}
+		if doc := e.index.Docs[id.String()]; doc == nil || *doc.Description != "hello world" {
+			t.Errorf("indexed description = %+v", doc)
+		}
+	})
 	t.Run("empty thumbnail keeps auto one", func(t *testing.T) {
 		e := newVideoEnv()
 		id := e.seed(2, models.StatusUploaded, nil)
@@ -246,9 +290,14 @@ func TestGetVideoKey(t *testing.T) {
 	if got, _ := e.svc.GetVideoKey(ctx, id.String()); got != want || e.metas.Calls.Count("Get") != before {
 		t.Error("second lookup should be served from cache")
 	}
-	if _, err := e.svc.GetVideoKey(ctx, uuid.NewString()); err == nil {
-		t.Error("missing video: expected error")
+	if _, err := e.svc.GetVideoKey(ctx, uuid.NewString()); !errors.Is(err, services.ErrNotFound) {
+		t.Errorf("missing video: err = %v, want ErrNotFound", err)
 	}
+	e.metas.Errs.Set("Get", errBoom)
+	if _, err := e.svc.GetVideoKey(ctx, uuid.NewString()); !errors.Is(err, errBoom) || errors.Is(err, services.ErrNotFound) {
+		t.Errorf("repo error should pass through: %v", err)
+	}
+	e.metas.Errs.Set("Get", nil)
 	e2 := newVideoEnv()
 	id2 := e2.seed(1, models.StatusUploadPending, nil)
 	e2.cache.Errs.Set("Set", errBoom)
@@ -391,6 +440,9 @@ func TestVideoServicePassthroughs(t *testing.T) {
 	if *m.SHA256 != "sha" || *m.DurationSeconds != 61 || *m.Height != 1080 || len(m.AvailableQualities) != 2 ||
 		*m.ManifestPath != "segments/"+sid+"/master.m3u8" || *m.Thumbnail != "thumbnails/"+sid+"/"+sid+".jpeg" {
 		t.Errorf("meta = %+v", m)
+	}
+	if _, err := e.svc.GetMeta(ctx, uuid.NewString()); !errors.Is(err, services.ErrNotFound) {
+		t.Errorf("GetMeta missing: err = %v, want ErrNotFound", err)
 	}
 	if m2, err := e.svc.GetVideo(ctx, sid); err != nil || m2.VideoId != id {
 		t.Errorf("GetVideo = %+v, %v", m2, err)

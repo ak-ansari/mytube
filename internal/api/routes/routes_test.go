@@ -55,8 +55,8 @@ func TestPublicRoutes(t *testing.T) {
 		{http.MethodGet, "/api/channels/" + owner.String() + "/videos"},
 		{http.MethodGet, "/api/videos/search?search=x"},
 		{http.MethodGet, "/api/videos/suggest?search=x"},
-		{http.MethodGet, "/api/videos/url?key=k"},
-		{http.MethodGet, "/api/files/url?key=k"},
+		{http.MethodGet, "/api/videos/url?key=thumbnails/" + vid.String() + "/" + vid.String() + ".jpeg"},
+		{http.MethodGet, "/api/files/url?key=avatars/" + owner.String() + "/a.png"},
 	}
 	for _, r := range routes {
 		t.Run(r.method+" "+r.path, func(t *testing.T) {

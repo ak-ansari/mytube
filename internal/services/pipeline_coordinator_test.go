@@ -65,8 +65,8 @@ func TestAdvance(t *testing.T) {
 		{"phase boundary with title", 3, models.StatusValid, title, 4, models.StatusThumbnailGenerated, true},
 		{"thumbnail -> transcoded", 4, models.StatusThumbnailGenerated, title, 5, models.StatusTranscoded, true},
 		{"transcoded -> segments", 5, models.StatusTranscoded, title, 6, models.StatusSegmentGenerated, true},
-		{"segments -> publish job", 6, models.StatusSegmentGenerated, title, 7, models.StatusPublished, true},
-		{"publish -> terminal, no job", 7, models.StatusPublished, title, 8, models.StatusPublished, false},
+		{"segments -> checksum, publish job", 6, models.StatusSegmentGenerated, title, 7, models.StatusChecksum, true},
+		{"publish -> terminal, no job", 7, models.StatusChecksum, title, 8, models.StatusPublished, false},
 		{"failed video is not advanced", 2, models.StatusPhase1Failed, nil, 2, models.StatusPhase1Failed, false},
 	}
 	for _, tt := range tests {

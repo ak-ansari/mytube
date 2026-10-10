@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	cfg  *Config
-	once sync.Once
+	cfg     *Config
+	loadErr error // kept so every GetConfig after a failed first load reports the failure
+	once    sync.Once
 )
 
 type DB struct {
@@ -49,6 +50,13 @@ type Stream struct {
 	TokenSecret string `yaml:"TOKEN_SECRET"` // shared with nginx (VIDEO_TOKEN_SECRET)
 	TokenTTL    string `yaml:"TOKEN_TTL"`    // Go duration, e.g. 6h; must outlive a viewing session
 }
+
+// Worker tunes the pipeline worker's retries. Every field is optional (see workers.DefaultRetryPolicy).
+type Worker struct {
+	MaxAttempts    int    `yaml:"MAX_ATTEMPTS"`     // total runs of a failing stage, including the first
+	RetryBaseDelay string `yaml:"RETRY_BASE_DELAY"` // Go duration before the first retry; doubles per retry
+	RetryMaxDelay  string `yaml:"RETRY_MAX_DELAY"`  // Go duration cap on a single retry delay
+}
 type Server struct {
 	HttpPort string `yaml:"HTTP_PORT"`
 }
@@ -61,6 +69,7 @@ type Config struct {
 	Es       ES       `yaml:"ES"`
 	Keycloak Keycloak `yaml:"KEYCLOAK"`
 	Stream   Stream   `yaml:"STREAM"`
+	Worker   Worker   `yaml:"WORKER"`
 }
 
 func validateConfigPath(path string) error {
@@ -85,8 +94,9 @@ func parseFlag() (string, error) {
 }
 
 func load() (*Config, error) {
-	var err error
 	once.Do(func() {
+		var err error
+		defer func() { loadErr = err }()
 		var configPath string
 		configPath, err = parseFlag()
 		if err != nil {
@@ -107,7 +117,7 @@ func load() (*Config, error) {
 		}
 		cfg = config
 	})
-	return cfg, err
+	return cfg, loadErr
 }
 
 func GetConfig() (*Config, error) {

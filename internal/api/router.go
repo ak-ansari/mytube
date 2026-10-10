@@ -29,7 +29,7 @@ func SetupRouter(videoService *services.VideoService, objectStore storage.Object
 	// reads are public; write routes add middleware.RequireUser()
 	api := r.Group("/api", middleware.Authenticate(verifier, userService))
 	routes.SetupVideoRoutes(api, videoService, catalogService)
-	routes.SetupFileRoutes(api, objectStore)
+	routes.SetupFileRoutes(api, services.NewFileService(objectStore, catalogService))
 	routes.SetupVideoMetadataRoutes(api, videoService)
 	routes.SetupVideoCatalogRoutes(api, catalogService)
 	routes.SetupUserRoutes(api, userService, catalogService)

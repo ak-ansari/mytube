@@ -77,7 +77,14 @@ func main() {
 	publish := workers.NewPublish(service, log)
 	thumbnail := workers.NewThumbnail(service, ffm, store, log)
 	handlerRegistry := workers.NewHandlerRegistry(validate, thumbnail, transcode, segment, publish, checksum)
-	runner := workers.NewRunner(queue, cache, conf.Redis.RedisQueueName, conf.S3.MinioRedisQueueName, log, handlerRegistry, pipelineCoordinator, service)
+	deadLetterRepo := postgres.NewDeadLetterRepo(pool)
+	retryPolicy := workers.RetryPolicyFromConfig(conf.Worker)
+	runner := workers.NewRunner(queue, cache, conf.Redis.RedisQueueName, conf.S3.MinioRedisQueueName, log, handlerRegistry, pipelineCoordinator, service).
+		WithRetry(queue, deadLetterRepo, retryPolicy)
+	log.Info("Retry policy",
+		logger.Int("maxAttempts", retryPolicy.MaxAttempts),
+		logger.String("baseDelay", retryPolicy.BaseDelay.String()),
+		logger.String("maxDelay", retryPolicy.MaxDelay.String()))
 
 	// --- Start worker runner ---
 	runner.Start(ctx)

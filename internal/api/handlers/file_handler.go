@@ -5,22 +5,25 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ak-ansari/mytube/internal/storage"
+	"github.com/ak-ansari/mytube/internal/api/middleware"
+	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/gin-gonic/gin"
 )
 
 type FileHandler struct {
-	objectStore storage.ObjectStore
+	files *services.FileService
 }
 
-func NewFileHandler(objectStore storage.ObjectStore) *FileHandler {
-	return &FileHandler{objectStore: objectStore}
+func NewFileHandler(files *services.FileService) *FileHandler {
+	return &FileHandler{files: files}
 }
+
+// GetUrl signs a GET for a thumbnail or avatar image.
 func (fh *FileHandler) GetUrl(c *gin.Context) {
 	key := c.Query("key")
 	ctx, cancel := context.WithTimeout(c, 120*time.Second)
 	defer cancel()
-	result, err := fh.objectStore.GetUrl(ctx, key)
+	result, err := fh.files.DownloadURL(ctx, key)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -28,6 +31,8 @@ func (fh *FileHandler) GetUrl(c *gin.Context) {
 
 	respondOK(c, "get video download url successfully", result)
 }
+
+// GerPreSignedPutUrl signs a PUT for the caller's avatar or a thumbnail of the caller's video.
 func (fh *FileHandler) GerPreSignedPutUrl(c *gin.Context) {
 	key := c.Query("key")
 	size := c.Query("size")
@@ -36,9 +41,10 @@ func (fh *FileHandler) GerPreSignedPutUrl(c *gin.Context) {
 		badRequest(c, "Size is not a valid number")
 		return
 	}
+	user := middleware.CurrentUser(c)
 	ctx, cancel := context.WithTimeout(c, 120*time.Second)
 	defer cancel()
-	url, err := fh.objectStore.GerPreSignedPutUrl(ctx, key, s)
+	url, err := fh.files.PresignImageUpload(ctx, user.ID, key, s)
 	if err != nil {
 		respondError(c, err)
 		return

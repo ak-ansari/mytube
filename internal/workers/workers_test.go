@@ -141,7 +141,9 @@ type runnerEnv struct {
 	mu     sync.Mutex
 	calls  map[int]int
 	fail   map[int]error
-	r      *Runner
+	// attempts records payload.Attempt of every handler run, per stage
+	attempts map[int][]int
+	r        *Runner
 }
 
 // minioEvent decodes just enough of a MinIO notification (as in testdata/sample_event.json).
@@ -178,7 +180,7 @@ func newRunnerEnv(t *testing.T) *runnerEnv {
 	e := &runnerEnv{
 		videos: fakes.NewVideoRepo(), metas: fakes.NewVideoMetadataRepo(), store: fakes.NewObjectStore(),
 		cache: fakes.NewCache(), queue: fakes.NewQueue(), log: &fakes.Logger{},
-		calls: map[int]int{}, fail: map[int]error{},
+		calls: map[int]int{}, fail: map[int]error{}, attempts: map[int][]int{},
 	}
 	e.store.ParseFunc = minioEvent
 	sm := services.NewVideoStateMachine()
@@ -191,6 +193,7 @@ func newRunnerEnv(t *testing.T) *runnerEnv {
 			e.mu.Lock()
 			defer e.mu.Unlock()
 			e.calls[stage]++
+			e.attempts[stage] = append(e.attempts[stage], p.Attempt)
 			return e.fail[stage]
 		}
 	}

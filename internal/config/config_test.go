@@ -124,6 +124,9 @@ func TestExampleConfigDecodes(t *testing.T) {
 	if c.Keycloak.Url == "" || c.Keycloak.Realm == "" {
 		t.Errorf("config.example.yaml should have a KEYCLOAK section, got %+v", c.Keycloak)
 	}
+	if c.Worker != (Worker{MaxAttempts: 4, RetryBaseDelay: "10s", RetryMaxDelay: "5m"}) {
+		t.Errorf("config.example.yaml WORKER section should list the defaults, got %+v", c.Worker)
+	}
 }
 
 // GetConfig parses -config from os.Args once per process (sync.Once), so all of its
@@ -151,27 +154,61 @@ func TestGetConfigLoadsOnce(t *testing.T) {
 	}
 }
 
-// A failed first load is not retried and is not remembered: sync.Once has run, cfg is still nil,
-// and the error lived in a per-call variable, so the second GetConfig returns (nil, nil).
+// A failed first load is not retried (sync.Once has run), but its error is kept: every later
+// GetConfig returns (nil, <the first error>) instead of (nil, nil).
 // Runs in a subprocess because GetConfig's state is process-global.
-func TestGetConfigErrorIsNotSticky(t *testing.T) {
+func TestGetConfigErrorIsSticky(t *testing.T) {
 	if os.Getenv("MYTUBE_CONFIG_SUBPROCESS") == "1" {
-		os.Args = []string{"mytube-api", "-config", filepath.Join(os.TempDir(), "definitely-missing-mytube.yaml")}
-		if _, err := GetConfig(); err == nil {
-			t.Fatal("first call: expected an error for a missing file")
+		missing := filepath.Join(os.TempDir(), "definitely-missing-mytube.yaml")
+		os.Args = []string{"mytube-api", "-config", missing}
+		c1, err1 := GetConfig()
+		if err1 == nil || c1 != nil {
+			t.Fatalf("first call = %v, %v; want nil and an error for a missing file", c1, err1)
 		}
-		c, err := GetConfig()
-		if c == nil && err == nil {
-			t.Fatal("second call returned (nil, nil): callers will dereference a nil *Config")
+		// fixing the file afterwards does not help: the load is not retried
+		if err := os.WriteFile(missing, []byte(fullYAML), 0o600); err == nil {
+			defer os.Remove(missing)
+		}
+		for i := 0; i < 3; i++ {
+			c, err := GetConfig()
+			if c != nil || err == nil {
+				t.Fatalf("call %d = %v, %v; want nil and the first error", i+2, c, err)
+			}
+			if err.Error() != err1.Error() {
+				t.Fatalf("call %d err = %v, want the first error %v", i+2, err, err1)
+			}
 		}
 		return
 	}
-	t.Skip("BUG: internal/config/config.go:84-111 — if the first load fails, every later GetConfig() returns (nil, nil) " +
-		"because once.Do never runs again and the error is not stored; callers such as storage.NewS3Store then dereference nil. " +
-		"Remove this Skip to run the subprocess check.")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestGetConfigErrorIsNotSticky$", "-test.count=1")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestGetConfigErrorIsSticky$", "-test.count=1", "-test.v")
 	cmd.Env = append(os.Environ(), "MYTUBE_CONFIG_SUBPROCESS=1")
-	if out, err := cmd.CombinedOutput(); err != nil {
+	out, err := cmd.CombinedOutput()
+	if err != nil {
 		t.Fatalf("subprocess failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "--- PASS: TestGetConfigErrorIsSticky") {
+		t.Fatalf("subprocess did not run the check:\n%s", out)
+	}
+}
+
+func TestWorkerSectionIsOptional(t *testing.T) {
+	var c Config
+	if err := yaml.Unmarshal([]byte(fullYAML), &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Worker != (Worker{}) {
+		t.Errorf("worker = %+v, want zero value when the section is missing", c.Worker)
+	}
+	withWorker := fullYAML + `
+WORKER:
+  MAX_ATTEMPTS: 7
+  RETRY_BASE_DELAY: 2s
+  RETRY_MAX_DELAY: 1m
+`
+	if err := yaml.Unmarshal([]byte(withWorker), &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Worker != (Worker{MaxAttempts: 7, RetryBaseDelay: "2s", RetryMaxDelay: "1m"}) {
+		t.Errorf("worker = %+v", c.Worker)
 	}
 }

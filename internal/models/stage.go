@@ -56,7 +56,7 @@ var Stages = map[int]*Stage{
 	},
 	7: {
 		Ordering:   7,
-		Name:       StatusPublished,
+		Name:       StatusChecksum, // checksum done; only the publish step makes the video visible (stage 8)
 		IsTerminal: false,
 		Parent:     ParentStagePhase2,
 	},

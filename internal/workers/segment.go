@@ -46,7 +46,7 @@ func (s *Segment) Handle(ctx context.Context, payload *jobs.JobPayload) error {
 	if len(v.AvailableQualities) == 0 {
 		s.log.Error("No transcoded qualities to segment",
 			logger.String("videoId", payload.VideoID))
-		return fmt.Errorf("video %s has no available qualities", payload.VideoID)
+		return jobs.Permanent(fmt.Errorf("video %s has no available qualities", payload.VideoID))
 	}
 
 	// get quality to metadata mapping

@@ -428,6 +428,12 @@ func TestUpdateValidation(t *testing.T) {
 		{"not confirmed", untitled, owner, services.UpdateVideoInput{Title: fakes.Ptr("Hello")}, services.ErrBadRequest, "confirm"},
 		{"title too short", id, owner, services.UpdateVideoInput{Title: fakes.Ptr("  ab  ")}, services.ErrBadRequest, "title"},
 		{"title too long", id, owner, services.UpdateVideoInput{Title: fakes.Ptr(strings.Repeat("x", 101))}, services.ErrBadRequest, "title"},
+		{"hindi title too long (101 runes)", id, owner, services.UpdateVideoInput{Title: fakes.Ptr(strings.Repeat("न", 101))}, services.ErrBadRequest, "title"},
+		{"hindi title too short (2 runes)", id, owner, services.UpdateVideoInput{Title: fakes.Ptr("नम")}, services.ErrBadRequest, "title"},
+		{"hindi description too long", id, owner, services.UpdateVideoInput{Description: fakes.Ptr(strings.Repeat("न", 5001))}, services.ErrBadRequest, "description"},
+		{"thumbnail nested", id, owner, services.UpdateVideoInput{Thumbnail: fakes.Ptr("thumbnails/" + id.String() + "/x/a.png")}, services.ErrBadRequest, "thumbnail"},
+		{"thumbnail not an image", id, owner, services.UpdateVideoInput{Thumbnail: fakes.Ptr("thumbnails/" + id.String() + "/a.mp4")}, services.ErrBadRequest, "thumbnail"},
+		{"thumbnail no extension", id, owner, services.UpdateVideoInput{Thumbnail: fakes.Ptr("thumbnails/" + id.String() + "/a")}, services.ErrBadRequest, "thumbnail"},
 		{"description too long", id, owner, services.UpdateVideoInput{Description: fakes.Ptr(strings.Repeat("x", 5001))}, services.ErrBadRequest, "description"},
 		{"thumbnail of another video", id, owner, services.UpdateVideoInput{Thumbnail: fakes.Ptr("thumbnails/" + uuid.NewString() + "/a.png")}, services.ErrBadRequest, "thumbnail"},
 		{"thumbnail folder only", id, owner, services.UpdateVideoInput{Thumbnail: fakes.Ptr("thumbnails/" + id.String() + "/")}, services.ErrBadRequest, "thumbnail"},
@@ -496,6 +502,20 @@ func TestUpdateSuccess(t *testing.T) {
 	}
 	if _, err := e.svc.Update(ctx, id, owner, services.UpdateVideoInput{Title: fakes.Ptr(strings.Repeat("t", 100))}); err != nil {
 		t.Fatalf("100-char title: %v", err)
+	}
+	// lengths count runes: a 40-character Hindi title is 120 bytes
+	hindi := strings.Repeat("न", 40)
+	if d, err := e.svc.Update(ctx, id, owner, services.UpdateVideoInput{Title: &hindi, Description: fakes.Ptr(strings.Repeat("न", 5000))}); err != nil || *d.Title != hindi {
+		t.Fatalf("hindi title: %v", err)
+	}
+	if _, err := e.svc.Update(ctx, id, owner, services.UpdateVideoInput{Title: fakes.Ptr(strings.Repeat("न", 100))}); err != nil {
+		t.Fatalf("100-rune title: %v", err)
+	}
+	for _, ext := range []string{"jpg", "jpeg", "png", "webp", "gif", "PNG"} {
+		th := "thumbnails/" + id.String() + "/c." + ext
+		if _, err := e.svc.Update(ctx, id, owner, services.UpdateVideoInput{Thumbnail: &th}); err != nil {
+			t.Errorf("thumbnail .%s: %v", ext, err)
+		}
 	}
 }
 

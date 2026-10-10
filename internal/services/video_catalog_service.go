@@ -7,6 +7,7 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ak-ansari/mytube/internal/cache"
 	"github.com/ak-ansari/mytube/internal/index"
@@ -168,12 +169,12 @@ func (s *VideoCatalogService) Update(ctx context.Context, id, userID uuid.UUID, 
 	}
 	if in.Title != nil {
 		t := strings.TrimSpace(*in.Title)
-		if len(t) < 3 || len(t) > 100 {
+		if n := utf8.RuneCountInString(t); n < 3 || n > 100 {
 			return nil, fmt.Errorf("%w: title must be 3-100 characters", ErrBadRequest)
 		}
 		in.Title = &t
 	}
-	if in.Description != nil && len(*in.Description) > 5000 {
+	if in.Description != nil && utf8.RuneCountInString(*in.Description) > 5000 {
 		return nil, fmt.Errorf("%w: description must be at most 5000 characters", ErrBadRequest)
 	}
 	if in.Thumbnail != nil && !validThumbnailKey(id.String(), *in.Thumbnail) {
@@ -205,11 +206,25 @@ func (s *VideoCatalogService) Update(ctx context.Context, id, userID uuid.UUID, 
 	return updated, nil
 }
 
-// validThumbnailKey reports whether key is an object under this video's thumbnail folder
+// validThumbnailKey reports whether key is an image under this video's thumbnail folder
 // (auto `thumbnails/{id}/{id}.jpeg` or custom `thumbnails/{id}/{uuid}.{ext}`).
 func validThumbnailKey(videoID, key string) bool {
-	prefix := storage.DirectoryThumbnails + "/" + videoID + "/"
-	return strings.HasPrefix(key, prefix) && len(key) > len(prefix) && !strings.Contains(key, "..")
+	return validImageKey(storage.DirectoryThumbnails+"/"+videoID+"/", key)
+}
+
+// imageExtensions are the formats accepted for thumbnails and avatars (browsers render all of them).
+var imageExtensions = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true}
+
+// validImageKey reports whether key is a single image file directly under prefix (no sub-folders, no "..").
+func validImageKey(prefix, key string) bool {
+	if !strings.HasPrefix(key, prefix) || strings.Contains(key, "..") {
+		return false
+	}
+	name := key[len(prefix):]
+	if name == "" || strings.Contains(name, "/") {
+		return false
+	}
+	return imageExtensions[strings.ToLower(path.Ext(name))]
 }
 
 // Delete removes the video row (metadata, reactions and comments cascade), then best-effort its search doc and all stored files.

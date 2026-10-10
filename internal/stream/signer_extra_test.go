@@ -23,6 +23,10 @@ func TestNewSignerConfig(t *testing.T) {
 		{"custom ttl", config.Stream{BaseUrl: "http://gw", TokenSecret: "s", TokenTTL: "90m"}, false, 90 * time.Minute, "http://gw"},
 		{"trailing slashes trimmed", config.Stream{BaseUrl: "http://gw///", TokenSecret: "s"}, false, 6 * time.Hour, "http://gw"},
 		{"bad ttl", config.Stream{BaseUrl: "http://gw", TokenSecret: "s", TokenTTL: "six hours"}, true, 0, ""},
+		{"negative ttl", config.Stream{BaseUrl: "http://gw", TokenSecret: "s", TokenTTL: "-1h"}, true, 0, ""},
+		{"zero ttl", config.Stream{BaseUrl: "http://gw", TokenSecret: "s", TokenTTL: "0s"}, true, 0, ""},
+		{"bare zero ttl", config.Stream{BaseUrl: "http://gw", TokenSecret: "s", TokenTTL: "0"}, true, 0, ""},
+		{"smallest positive ttl", config.Stream{BaseUrl: "http://gw", TokenSecret: "s", TokenTTL: "1ns"}, false, time.Nanosecond, "http://gw"},
 		{"missing base url", config.Stream{TokenSecret: "s"}, true, 0, ""},
 		{"missing section entirely", config.Stream{}, true, 0, ""},
 	}

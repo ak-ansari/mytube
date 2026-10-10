@@ -2,6 +2,7 @@ package workers
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -26,6 +27,17 @@ func NewThumbnail(s *services.VideoService, ffm *media.FFM, store storage.Object
 		store:   store,
 		log:     log,
 	}
+}
+
+// thumbnailSeek picks the frame time: 3s in, or the middle of clips shorter than 6s.
+func thumbnailSeek(durationSeconds int) int {
+	if durationSeconds <= 0 {
+		return 0
+	}
+	if half := durationSeconds / 2; half < 3 {
+		return half
+	}
+	return 3
 }
 
 func (t *Thumbnail) Handle(ctx context.Context, payload *jobs.JobPayload) error {
@@ -60,12 +72,21 @@ func (t *Thumbnail) Handle(ctx context.Context, payload *jobs.JobPayload) error 
 	filename := payload.VideoID + ".jpeg"
 	outPath := filepath.Join(outDir, filename)
 
-	if err := t.ffm.CreateThumbnail(ctx, url, outPath, 3); err != nil {
+	seek := 3
+	if meta, err := t.service.GetMeta(ctx, payload.VideoID); err == nil && meta.DurationSeconds != nil {
+		seek = thumbnailSeek(*meta.DurationSeconds)
+	}
+	if err := t.ffm.CreateThumbnail(ctx, url, outPath, seek); err != nil {
 		t.log.Error("Failed to create thumbnail",
 			logger.String("videoId", payload.VideoID),
 			logger.String("file", outPath),
 			logger.Error(err))
 		return err
+	}
+
+	// ffmpeg exits 0 without writing a frame when the seek lands past the end of the video
+	if !FileExists(outPath) {
+		return jobs.Permanent(fmt.Errorf("ffmpeg produced no thumbnail frame at %ds", seek))
 	}
 
 	t.log.Success("Thumbnail created",

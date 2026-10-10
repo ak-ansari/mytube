@@ -187,17 +187,97 @@ func (c *Cache) TTL(key string) time.Duration {
 
 // ---------------------------------------------------------------- Queue
 
-// Queue is an in-memory FIFO queue.Queue. Dequeue on an empty queue returns (nil, nil).
+// Queue is an in-memory FIFO queue.DelayedQueue. Dequeue on an empty queue returns (nil, nil).
+//
+// EnqueueAfter stores the message with a due time of Now()+delay (Now defaults to time.Now; set it
+// for a fake clock). A delay <= 0 enqueues at once, like the Redis impl. PromoteDue moves messages
+// due at or before the `now` it is given, earliest first (ties in insertion order).
 type Queue struct {
 	Errs  Errs
 	Calls Calls
-	mu    sync.Mutex
-	q     map[string][][]byte
+	// Now is the clock EnqueueAfter computes due times from; nil means time.Now.
+	Now     func() time.Time
+	mu      sync.Mutex
+	q       map[string][][]byte
+	delayed map[string][]DelayedMessage
+	seq     int
+}
+
+// DelayedMessage is a message waiting in the delayed set of a fake Queue.
+type DelayedMessage struct {
+	Payload []byte
+	Due     time.Time
+	Delay   time.Duration // the delay EnqueueAfter was called with
+	seq     int
 }
 
 var _ queue.Queue = (*Queue)(nil)
+var _ queue.DelayedQueue = (*Queue)(nil)
 
-func NewQueue() *Queue { return &Queue{q: map[string][][]byte{}} }
+func NewQueue() *Queue {
+	return &Queue{q: map[string][][]byte{}, delayed: map[string][]DelayedMessage{}}
+}
+
+func (q *Queue) now() time.Time {
+	if q.Now != nil {
+		return q.Now()
+	}
+	return time.Now()
+}
+
+func (q *Queue) EnqueueAfter(ctx context.Context, name string, payload []byte, delay time.Duration) error {
+	q.Calls.add("EnqueueAfter")
+	if err := q.Errs.get("EnqueueAfter"); err != nil {
+		return err
+	}
+	if delay <= 0 {
+		return q.Enqueue(ctx, name, payload)
+	}
+	due := q.now().Add(delay)
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.seq++
+	q.delayed[name] = append(q.delayed[name], DelayedMessage{Payload: append([]byte(nil), payload...), Due: due, Delay: delay, seq: q.seq})
+	return nil
+}
+
+func (q *Queue) PromoteDue(_ context.Context, name string, now time.Time, limit int) (int, error) {
+	q.Calls.add("PromoteDue")
+	if err := q.Errs.get("PromoteDue"); err != nil {
+		return 0, err
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	pending := q.delayed[name]
+	sort.SliceStable(pending, func(i, j int) bool {
+		if !pending[i].Due.Equal(pending[j].Due) {
+			return pending[i].Due.Before(pending[j].Due)
+		}
+		return pending[i].seq < pending[j].seq
+	})
+	moved := 0
+	var keep []DelayedMessage
+	for _, m := range pending {
+		if moved < limit && !m.Due.After(now) {
+			q.q[name] = append(q.q[name], m.Payload)
+			moved++
+			continue
+		}
+		keep = append(keep, m)
+	}
+	q.delayed[name] = keep
+	return moved, nil
+}
+
+// Delayed returns a copy of the messages waiting in a queue's delayed set.
+func (q *Queue) Delayed(name string) []DelayedMessage {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return append([]DelayedMessage(nil), q.delayed[name]...)
+}
 
 func (q *Queue) Enqueue(_ context.Context, name string, payload []byte) error {
 	q.Calls.add("Enqueue")

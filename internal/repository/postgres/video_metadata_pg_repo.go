@@ -55,23 +55,25 @@ func (r *VideoMetadataRepo) UpdateThumbnail(ctx context.Context, videoId string,
 func (r *VideoMetadataRepo) Get(ctx context.Context, videoId string) (*models.VideoMetadata, error) {
 	id, _ := uuid.Parse(videoId)
 	row := r.pool.QueryRow(ctx, `
-        SELECT id, filename, original_object_key, size, duration_seconds, codec_video, codec_audio, width, height, available_qualities, manifest_path, thumbnail, created_at, updated_at
+        SELECT id, video_id, filename, original_object_key, sha256, size, duration_seconds, codec_video, codec_audio, width, height, available_qualities, manifest_path, thumbnail, created_at, updated_at
         FROM video_metadata WHERE id=$1 OR video_id=$1
     `, id)
 	var v models.VideoMetadata
-	if err := row.Scan(&v.ID, &v.Filename, &v.OriginalObjectKey, &v.Size, &v.DurationSeconds, &v.CodecVideo, &v.CodecAudio, &v.Width, &v.Height, &v.AvailableQualities, &v.ManifestPath, &v.Thumbnail, &v.CreatedAt, &v.UpdatedAt); err != nil {
+	if err := row.Scan(&v.ID, &v.VideoId, &v.Filename, &v.OriginalObjectKey, &v.SHA256, &v.Size, &v.DurationSeconds, &v.CodecVideo, &v.CodecAudio, &v.Width, &v.Height, &v.AvailableQualities, &v.ManifestPath, &v.Thumbnail, &v.CreatedAt, &v.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &v, nil
 }
+
+// GetByKey returns the id of the video whose original upload is stored at key.
 func (r *VideoMetadataRepo) GetByKey(ctx context.Context, key string) (string, error) {
 	row := r.pool.QueryRow(ctx, `
-        SELECT id
+        SELECT video_id
         FROM video_metadata WHERE original_object_key=$1
     `, key)
-	var v models.VideoMetadata
-	if err := row.Scan(&v.ID); err != nil {
+	var videoID uuid.UUID
+	if err := row.Scan(&videoID); err != nil {
 		return "", err
 	}
-	return v.ID.String(), nil
+	return videoID.String(), nil
 }

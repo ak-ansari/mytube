@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ak-ansari/mytube/internal/auth"
 	"github.com/ak-ansari/mytube/internal/models"
@@ -61,13 +62,17 @@ type UpdateProfileInput struct {
 func (s *UserService) UpdateProfile(ctx context.Context, id uuid.UUID, in UpdateProfileInput) (*models.Profile, error) {
 	if in.ChannelName != nil {
 		name := strings.TrimSpace(*in.ChannelName)
-		if len(name) < 3 || len(name) > 60 {
+		if n := utf8.RuneCountInString(name); n < 3 || n > 60 {
 			return nil, fmt.Errorf("%w: channel name must be 3-60 characters", ErrBadRequest)
 		}
 		in.ChannelName = &name
 	}
-	if in.Description != nil && len(*in.Description) > 1000 {
+	if in.Description != nil && utf8.RuneCountInString(*in.Description) > 1000 {
 		return nil, fmt.Errorf("%w: description must be at most 1000 characters", ErrBadRequest)
+	}
+	// "" clears the avatar; anything else must be an image the user uploaded under their own folder
+	if in.Avatar != nil && *in.Avatar != "" && !validImageKey(AvatarPrefix(id), *in.Avatar) {
+		return nil, fmt.Errorf("%w: avatar must be an image uploaded to your own avatar folder", ErrBadRequest)
 	}
 	if err := s.repo.UpdateProfile(ctx, id, in.ChannelName, in.Description, in.Avatar); err != nil {
 		return nil, err

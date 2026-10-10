@@ -68,7 +68,7 @@ func (c *Validate) Handle(ctx context.Context, p *jobs.JobPayload) error {
 			logger.String("videoId", p.VideoID),
 			logger.Int64("actual", size),
 			logger.Int64("declared", meta.Size))
-		return fmt.Errorf("uploaded file size %d exceeds declared size %d", size, meta.Size)
+		return jobs.Permanent(fmt.Errorf("uploaded file size %d exceeds declared size %d", size, meta.Size))
 	}
 
 	temp, err := os.CreateTemp("", "video-*")
@@ -126,7 +126,7 @@ func (c *Validate) Handle(ctx context.Context, p *jobs.JobPayload) error {
 	if vcodec == "" {
 		c.log.Error("No video stream found",
 			logger.String("videoId", p.VideoID))
-		return fmt.Errorf("no video stream found in uploaded file")
+		return jobs.Permanent(fmt.Errorf("no video stream found in uploaded file"))
 	}
 
 	if pr.Format.Duration != "" {

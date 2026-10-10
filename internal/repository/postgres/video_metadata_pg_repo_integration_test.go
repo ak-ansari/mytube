@@ -31,7 +31,7 @@ func TestVideoMetadataRepo_InsertBasicAndGet(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Get(%s): %v", lookup, err)
 		}
-		if m.ID != metaID || m.Filename != "clip.mp4" || m.OriginalObjectKey != key || m.Size != 4096 {
+		if m.ID != metaID || m.VideoId != videoID || m.Filename != "clip.mp4" || m.OriginalObjectKey != key || m.Size != 4096 {
 			t.Fatalf("unexpected metadata %+v", m)
 		}
 		if m.DurationSeconds != nil || m.Width != nil || m.ManifestPath != nil || m.Thumbnail != nil {
@@ -55,10 +55,21 @@ func TestVideoMetadataRepo_Get_ReturnsVideoIDAndSHA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.VideoId != videoID || m.SHA256 == nil || *m.SHA256 != "abc123" {
-		t.Skipf("BUG: VideoMetadataRepo.Get (internal/repository/postgres/video_metadata_pg_repo.go:55-58) does not select "+
-			"video_id or sha256, so the returned metadata has VideoId=%s (want %s) and SHA256=%v (want abc123); "+
-			"GET /api/video-meta/:id serves a zero video_id", m.VideoId, videoID, m.SHA256)
+	if m.VideoId != videoID {
+		t.Errorf("VideoId = %s, want %s", m.VideoId, videoID)
+	}
+	if m.SHA256 == nil || *m.SHA256 != "abc123" {
+		t.Errorf("SHA256 = %v, want abc123", m.SHA256)
+	}
+	// Get accepts the metadata id as well as the video id
+	byMetaID, err := repo.Get(ctx, m.ID.String())
+	if err != nil || byMetaID.VideoId != videoID || byMetaID.ID != m.ID {
+		t.Errorf("Get(metadata id) = %+v, %v", byMetaID, err)
+	}
+	// before the worker computes it, sha256 is NULL
+	other := mkVideo(t, pool, mkUser(t, pool, "bob"), videoOpts{})
+	if m2, err := repo.Get(ctx, other.String()); err != nil || m2.SHA256 != nil || m2.VideoId != other {
+		t.Errorf("fresh metadata = %+v, %v", m2, err)
 	}
 }
 
@@ -148,14 +159,14 @@ func TestVideoMetadataRepo_GetByKey_ReturnsVideoID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var metaID string
+	if err := pool.QueryRow(ctx, `SELECT id::text FROM video_metadata WHERE video_id=$1`, videoID).Scan(&metaID); err != nil {
+		t.Fatal(err)
+	}
+	if metaID == videoID.String() {
+		t.Fatal("test setup: metadata id must differ from the video id")
+	}
 	if got != videoID.String() {
-		var metaID string
-		_ = pool.QueryRow(ctx, `SELECT id::text FROM video_metadata WHERE video_id=$1`, videoID).Scan(&metaID)
-		if got == metaID {
-			t.Skipf("BUG: VideoMetadataRepo.GetByKey (internal/repository/postgres/video_metadata_pg_repo.go:67-75) "+
-				"selects video_metadata.id instead of video_id: got metadata id %s, want video id %s "+
-				"(the worker only works because presign caches key->video id for 24h)", got, videoID)
-		}
-		t.Fatalf("GetByKey = %s, want video id %s", got, videoID)
+		t.Fatalf("GetByKey = %s, want video id %s (metadata id is %s)", got, videoID, metaID)
 	}
 }

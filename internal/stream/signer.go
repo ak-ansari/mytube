@@ -31,6 +31,9 @@ func NewSigner(conf config.Stream) (*Signer, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid STREAM.TOKEN_TTL: %w", err)
 		}
+		if d <= 0 {
+			return nil, fmt.Errorf("STREAM.TOKEN_TTL must be positive, got %s", conf.TokenTTL)
+		}
 		ttl = d
 	}
 	return &Signer{baseURL: strings.TrimRight(conf.BaseUrl, "/"), secret: conf.TokenSecret, ttl: ttl, now: time.Now}, nil

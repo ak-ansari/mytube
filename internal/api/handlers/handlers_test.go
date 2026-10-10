@@ -405,10 +405,16 @@ func TestUserEndpoints(t *testing.T) {
 	expect(t, w.Code, env, 400, "invalid request body")
 	w, env = e.Do(t, http.MethodPut, "/api/users/me", tok, map[string]string{"channel_name": "x"})
 	expect(t, w.Code, env, 400, "channel name must be 3-60 characters")
-	w, env = e.Do(t, http.MethodPut, "/api/users/me", tok, map[string]string{"channel_name": "Brand New", "avatar": "avatars/a.png"})
+	// avatars must be images under the caller's own avatars/{id}/ folder
+	for _, bad := range []string{"avatars/a.png", "avatars/" + creator.String() + "/a.png", "avatars/" + me.String() + "/a.mp4", "originals/" + me.String() + "/original.mp4"} {
+		w, env = e.Do(t, http.MethodPut, "/api/users/me", tok, map[string]string{"avatar": bad})
+		expect(t, w.Code, env, 400, "avatar must be an image uploaded to your own avatar folder")
+	}
+	avatar := "avatars/" + me.String() + "/a.png"
+	w, env = e.Do(t, http.MethodPut, "/api/users/me", tok, map[string]string{"channel_name": "Brand New", "avatar": avatar})
 	expect(t, w.Code, env, 200, "profile updated successfully")
 	apptest.DecodeData(t, env, &prof)
-	if *prof.ChannelName != "Brand New" || prof.AvatarURL != "https://get.test/avatars/a.png" {
+	if *prof.ChannelName != "Brand New" || prof.AvatarURL != "https://get.test/"+avatar {
 		t.Errorf("updated profile = %+v", prof)
 	}
 
@@ -547,6 +553,8 @@ func TestLegacyVideoEndpoints(t *testing.T) {
 	e.Metas.Put(&models.VideoMetadata{VideoId: id, OriginalObjectKey: "originals/" + id.String() + "/original.mp4"})
 	_ = e.Index.InsertVideo(ctx, &models.Video{ID: id, Title: fakes.Ptr("dogs")})
 	e.Index.Suggestions = []index.Suggestion{{ID: id.String(), Text: "dogs"}}
+	thumb := "thumbnails/" + id.String() + "/" + id.String() + ".jpeg"
+	avatar := "avatars/" + uuid.NewString() + "/me.png"
 
 	tests := []struct {
 		name   string
@@ -555,11 +563,20 @@ func TestLegacyVideoEndpoints(t *testing.T) {
 		data   string
 	}{
 		{"GET /videos/:id", "/api/videos/" + id.String(), 200, `"originals/` + id.String() + `/original.mp4"`},
-		{"GET /videos/:id missing", "/api/videos/" + uuid.NewString(), 500, "null"},
-		{"GET /videos/url", "/api/videos/url?key=a/b", 200, `"https://get.test/a/b"`},
+		{"GET /videos/:id missing", "/api/videos/" + uuid.NewString(), 404, "null"},
+		{"GET /videos/url", "/api/videos/url?key=" + thumb, 200, `"https://get.test/` + thumb + `"`},
+		{"GET /videos/url avatar", "/api/videos/url?key=" + avatar, 200, `"https://get.test/` + avatar + `"`},
+		{"GET /videos/url any key", "/api/videos/url?key=a/b", 400, "null"},
+		{"GET /videos/url original", "/api/videos/url?key=originals/" + id.String() + "/original.mp4", 400, "null"},
+		{"GET /videos/url segment", "/api/videos/url?key=segments/" + id.String() + "/master.m3u8", 400, "null"},
 		{"GET /videos/suggest", "/api/videos/suggest?search=do", 200, `["dogs"]`},
 		{"GET /video-meta/:id", "/api/video-meta/" + id.String(), 200, ""},
-		{"GET /files/url", "/api/files/url?key=thumbnails/x.png", 200, `"https://get.test/thumbnails/x.png"`},
+		{"GET /video-meta/:id missing", "/api/video-meta/" + uuid.NewString(), 404, "null"},
+		{"GET /files/url", "/api/files/url?key=" + thumb, 200, `"https://get.test/` + thumb + `"`},
+		{"GET /files/url avatar", "/api/files/url?key=" + avatar, 200, `"https://get.test/` + avatar + `"`},
+		{"GET /files/url no folder", "/api/files/url?key=thumbnails/x.png", 400, "null"},
+		{"GET /files/url original", "/api/files/url?key=originals/" + id.String() + "/original.mp4", 400, "null"},
+		{"GET /files/url transcoded", "/api/files/url?key=transcoded/" + id.String() + "/720p.mp4", 400, "null"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -582,7 +599,7 @@ func TestLegacyVideoEndpoints(t *testing.T) {
 	e.Index.Errs.Set("SearchVideo", errBoom)
 	e.Index.Errs.Set("SuggestVideos", errBoom)
 	e.Store.Errs.Set("GetUrl", errBoom)
-	for _, p := range []string{"/api/videos/search?search=x", "/api/videos/suggest?search=x", "/api/videos/url?key=k", "/api/files/url?key=k"} {
+	for _, p := range []string{"/api/videos/search?search=x", "/api/videos/suggest?search=x", "/api/videos/url?key=" + thumb, "/api/files/url?key=" + thumb} {
 		w, env := e.Do(t, http.MethodGet, p, "", nil)
 		expect(t, w.Code, env, 500, "something went wrong")
 	}
@@ -593,20 +610,50 @@ func TestLegacyVideoEndpoints(t *testing.T) {
 
 func TestFilePresignEndpoint(t *testing.T) {
 	e := apptest.New(t)
-	_, tok := e.User(t, "me")
-	w, env := e.Do(t, http.MethodGet, "/api/files/presign?key=thumbnails/x.png&size=10", "", nil)
+	me, tok := e.User(t, "me")
+	other, _ := e.User(t, "other")
+	mine := e.SeedVideo(me, apptest.VideoOpts{})
+	theirs := e.SeedVideo(other, apptest.VideoOpts{})
+	thumb := "thumbnails/" + mine.String() + "/custom.png"
+
+	w, env := e.Do(t, http.MethodGet, "/api/files/presign?key="+thumb+"&size=10", "", nil)
 	expect(t, w.Code, env, 401, "login required")
-	w, env = e.Do(t, http.MethodGet, "/api/files/presign?key=thumbnails/x.png&size=abc", tok, nil)
+	w, env = e.Do(t, http.MethodGet, "/api/files/presign?key="+thumb+"&size=abc", tok, nil)
 	expect(t, w.Code, env, 400, "Size is not a valid number")
-	w, env = e.Do(t, http.MethodGet, "/api/files/presign?key=thumbnails/x.png&size=10", tok, nil)
+	w, env = e.Do(t, http.MethodGet, "/api/files/presign?key="+thumb+"&size=10", tok, nil)
 	expect(t, w.Code, env, 200, "")
 	var out map[string]string
 	apptest.DecodeData(t, env, &out)
-	if out["key"] != "thumbnails/x.png" || out["url"] != "https://put.test/thumbnails/x.png?size=10" {
+	if out["key"] != thumb || out["url"] != "https://put.test/"+thumb+"?size=10" {
 		t.Errorf("presign = %v", out)
 	}
+	avatar := "avatars/" + me.String() + "/a.webp"
+	w, env = e.Do(t, http.MethodGet, "/api/files/presign?key="+avatar+"&size=10", tok, nil)
+	expect(t, w.Code, env, 200, "")
+
+	for _, tt := range []struct {
+		name, key string
+		size      string
+		status    int
+	}{
+		{"any key", "k", "1", 400},
+		{"thumbnail without folder", "thumbnails/x.png", "10", 400},
+		{"original", "originals/" + mine.String() + "/original.mp4", "10", 400},
+		{"someone else's video", "thumbnails/" + theirs.String() + "/x.png", "10", 403},
+		{"unknown video", "thumbnails/" + uuid.NewString() + "/x.png", "10", 404},
+		{"someone else's avatar", "avatars/" + other.String() + "/a.png", "10", 400},
+		{"not an image", "thumbnails/" + mine.String() + "/x.mp4", "10", 400},
+		{"zero size", thumb, "0", 400},
+		{"too big", thumb, "10485761", 400},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			w, env := e.Do(t, http.MethodGet, "/api/files/presign?key="+tt.key+"&size="+tt.size, tok, nil)
+			expect(t, w.Code, env, tt.status, "")
+		})
+	}
+
 	e.Store.Errs.Set("GerPreSignedPutUrl", errBoom)
-	w, env = e.Do(t, http.MethodGet, "/api/files/presign?key=k&size=1", tok, nil)
+	w, env = e.Do(t, http.MethodGet, "/api/files/presign?key="+thumb+"&size=1", tok, nil)
 	expect(t, w.Code, env, 500, "")
 }
 

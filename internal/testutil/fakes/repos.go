@@ -123,7 +123,7 @@ func (r *VideoRepo) AdvanceState(_ context.Context, id string, from, to int, sta
 // ---------------------------------------------------------------- VideoMetadataRepository
 
 // VideoMetadataRepo is an in-memory repository.VideoMetadataRepository keyed by video id.
-// GetByKey returns the *video* id (the Postgres impl returns the metadata id, see CLAUDE.md known gaps).
+// GetByKey returns the video id, like the Postgres impl.
 type VideoMetadataRepo struct {
 	Errs  Errs
 	Calls Calls

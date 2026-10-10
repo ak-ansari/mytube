@@ -107,6 +107,8 @@ func TestGetProfile(t *testing.T) {
 
 func TestUpdateProfile(t *testing.T) {
 	ctx := context.Background()
+	id := uuid.New()
+	myAvatar := "avatars/" + id.String() + "/a.png"
 	tests := []struct {
 		name    string
 		in      services.UpdateProfileInput
@@ -122,18 +124,38 @@ func TestUpdateProfile(t *testing.T) {
 			}
 		}},
 		{"boundaries", services.UpdateProfileInput{ChannelName: fakes.Ptr(strings.Repeat("n", 60)), Description: fakes.Ptr(strings.Repeat("d", 1000))}, nil, nil},
-		{"avatar and description", services.UpdateProfileInput{Description: fakes.Ptr("hello"), Avatar: fakes.Ptr("avatars/x/a.png")}, nil, func(t *testing.T, p *models.Profile) {
-			if *p.Description != "hello" || p.AvatarURL != "https://get.test/avatars/x/a.png" || *p.ChannelName != "Orig" {
+		{"avatar and description", services.UpdateProfileInput{Description: fakes.Ptr("hello"), Avatar: fakes.Ptr(myAvatar)}, nil, func(t *testing.T, p *models.Profile) {
+			if *p.Description != "hello" || p.AvatarURL != "https://get.test/"+myAvatar || *p.ChannelName != "Orig" {
 				t.Errorf("profile = %+v", p)
 			}
 		}},
+		{"empty avatar clears it", services.UpdateProfileInput{Avatar: fakes.Ptr("")}, nil, func(t *testing.T, p *models.Profile) {
+			if p.AvatarURL != "" {
+				t.Errorf("avatar url = %q", p.AvatarURL)
+			}
+		}},
+		{"avatar uppercase extension", services.UpdateProfileInput{Avatar: fakes.Ptr("avatars/" + id.String() + "/A.JPEG")}, nil, nil},
+		{"avatar of another user", services.UpdateProfileInput{Avatar: fakes.Ptr("avatars/" + uuid.NewString() + "/a.png")}, services.ErrBadRequest, nil},
+		{"avatar without user folder", services.UpdateProfileInput{Avatar: fakes.Ptr("avatars/a.png")}, services.ErrBadRequest, nil},
+		{"avatar folder only", services.UpdateProfileInput{Avatar: fakes.Ptr("avatars/" + id.String() + "/")}, services.ErrBadRequest, nil},
+		{"avatar nested", services.UpdateProfileInput{Avatar: fakes.Ptr("avatars/" + id.String() + "/x/a.png")}, services.ErrBadRequest, nil},
+		{"avatar dot-dot", services.UpdateProfileInput{Avatar: fakes.Ptr("avatars/" + id.String() + "/../a.png")}, services.ErrBadRequest, nil},
+		{"avatar not an image", services.UpdateProfileInput{Avatar: fakes.Ptr("avatars/" + id.String() + "/a.mp4")}, services.ErrBadRequest, nil},
+		{"avatar no extension", services.UpdateProfileInput{Avatar: fakes.Ptr("avatars/" + id.String() + "/a")}, services.ErrBadRequest, nil},
+		{"avatar is a thumbnail", services.UpdateProfileInput{Avatar: fakes.Ptr("thumbnails/" + id.String() + "/a.png")}, services.ErrBadRequest, nil},
+		{"avatar is an original", services.UpdateProfileInput{Avatar: fakes.Ptr("originals/" + id.String() + "/original.mp4")}, services.ErrBadRequest, nil},
+		// lengths count characters (runes), not bytes
+		{"hindi channel name", services.UpdateProfileInput{ChannelName: fakes.Ptr(strings.Repeat("नम", 30))}, nil, nil},
+		{"hindi channel name too long", services.UpdateProfileInput{ChannelName: fakes.Ptr(strings.Repeat("न", 61))}, services.ErrBadRequest, nil},
+		{"hindi channel name too short", services.UpdateProfileInput{ChannelName: fakes.Ptr("नम")}, services.ErrBadRequest, nil},
+		{"hindi description", services.UpdateProfileInput{Description: fakes.Ptr(strings.Repeat("न", 1000))}, nil, nil},
+		{"hindi description too long", services.UpdateProfileInput{Description: fakes.Ptr(strings.Repeat("न", 1001))}, services.ErrBadRequest, nil},
 		{"empty update", services.UpdateProfileInput{}, nil, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo, _, svc := newUserEnv()
-			id := uuid.New()
-			repo.Put(models.User{ID: id, UserName: "u", ChannelName: "Orig"})
+			repo.Put(models.User{ID: id, UserName: "u", ChannelName: "Orig", Avatar: "avatars/" + id.String() + "/old.png"})
 			p, err := svc.UpdateProfile(ctx, id, tt.in)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)

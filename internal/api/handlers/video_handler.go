@@ -97,8 +97,14 @@ func (vh *VideoHandler) GetVideo(c *gin.Context) {
 	respondOK(c, "get video successfully", result)
 
 }
+
+// GetDownloadUrl signs a GET for a thumbnail or avatar image; video files are not handed out here.
 func (vh *VideoHandler) GetDownloadUrl(c *gin.Context) {
 	key := c.Query("key")
+	if !services.IsPublicImageKey(key) {
+		badRequest(c, "only thumbnail and avatar images can be fetched")
+		return
+	}
 	ctx, cancel := context.WithTimeout(c, 120*time.Second)
 	defer cancel()
 	result, err := vh.service.GetDownloadUrl(ctx, key)

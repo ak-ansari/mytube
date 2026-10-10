@@ -21,7 +21,10 @@ make keycloak-dev  # once per Keycloak volume: admin console over http + realm l
 make run-api       # API on :8080
 make run-worker    # pipeline worker (needs ffmpeg/ffprobe on PATH)
 make down
-go build ./... && go vet ./...   # compile check; there are no tests yet
+go build ./... && go vet ./...   # compile check
+go test ./...                                         # unit tests (fakes in internal/testutil, no Docker)
+go test -tags integration -count=1 -p 1 ./...         # real Postgres/Redis/MinIO/ES; isolated mytube_test DB, mytube-test bucket, Redis DB 15
+go test -tags e2e -count=1 -v -timeout 10m ./test/e2e/  # black-box against a running API + worker (E2E_API_URL, default :8080)
 ```
 
 Ports: **HLS gateway 80** (nginx), Postgres 5432, Redis 6379, MinIO S3 API via nginx **9002** (presigned URLs point here), MinIO console 9001, ES 9200, Kibana 5601, **Keycloak 8180** (admin/admin).
@@ -77,7 +80,8 @@ Run every command from the repo root. `make` passes `-f deployments/docker-compo
 
 - `cmd/api/main.go` — config, logger, pg pool (runs migrations), redis queue/cache, ES index, MinIO store, `VideoService` (upload pipeline), `UserService`, `VideoCatalogService`, Keycloak verifier → `api.SetupRouter`.
 - `cmd/worker/main.go` — same deps + `workers.Runner` (2 goroutines polling bucket events and the job queue; shutdown waits for them via `Runner.Wait`).
-  - **No retries anywhere.** A failing stage handler is logged and the video is marked failed (`PipelineCoordinator.Fail` → `phase_1_failed` / `phase_2_failed`). A bad bucket event is logged and dropped. Panics are recovered per iteration; infrastructure errors (e.g. Redis down) pause the loop ~1s.
+  - **Retries + dead letters** (`Runner.WithRetry`, `workers/retry.go`). `IsRetryable` classifies a failure: `jobs.Permanent(err)`, a missing video (`pgx.ErrNoRows`/`ErrNotFound`), ffmpeg/ffprobe exit errors (unless the output mentions a network failure) and JSON errors are permanent; context, network, Postgres connection/serialization, MinIO 5xx/429 and unknown errors are retryable. A retryable stage failure is re-enqueued with `Attempt+1` after exponential backoff with jitter (Redis ZSET `<queue>:delayed`, moved back onto the list by `PromoteDueRetries` each iteration) until `WORKER.MAX_ATTEMPTS` (default 4) runs. A permanent failure, or one out of attempts, is written to `dead_letter_jobs` and the video is marked failed (`PipelineCoordinator.Fail` → `phase_1_failed` / `phase_2_failed`). An `Advance` error after a successful handler is retried too (handlers are idempotent). A stage interrupted by shutdown is re-queued unchanged. Bucket events retry in place: the event stays in the hash with backoff state in cache key `bucket_event_retry:<key>`, then is dead-lettered (`source = bucket_event`) and dropped. Panics are recovered per iteration; infrastructure errors (e.g. Redis down) pause the loop ~1s.
+  - A job is lost if the worker process dies mid-stage (BLPOP removed it); the video then sits at its stage. Not handled yet.
   - `PipelineCoordinator.Advance` moves stages with `VideoRepository.AdvanceState` (`UPDATE … WHERE stage = <from>`), so concurrent callers advance a stage once and only the winner enqueues the next job.
 - `internal/services/video_service.go` (+ `pipeline_coordinator.go`, `video_state_machine_service.go`) — original upload/processing logic.
 - `internal/services/video_catalog_service.go` — feed/search/watch, studio CRUD, views, reactions, comments. `user_service.go` — profile, channels, subscriptions. `errors.go` — `ErrNotFound/ErrForbidden/ErrBadRequest` that handlers map to 404/403/400.
@@ -85,14 +89,14 @@ Run every command from the repo root. `make` passes `-f deployments/docker-compo
 - `internal/storage` — `ObjectStore` + MinIO impl. Keys: `originals/{videoId}/original.{ext}`, `thumbnails/{videoId}/…` (auto `{videoId}.jpeg`, custom uploads `{uuid}.{ext}`), `transcoded/{videoId}/{q}.mp4`, `segments/{videoId}/master.m3u8`, `avatars/{userId}/{uuid}.{ext}`. Bucket is private (see above).
 - `internal/index/elasticsearch` — `video_index`; search returns IDs, rows then come from Postgres.
 - `internal/models/catalog.go` — API shapes: `VideoCard`, `VideoDetails`, `Channel`, `Profile`, `Comment`, `Page[T]`. Services fill presigned `*_url` fields (`thumbnail_url`, `avatar_url`, `manifest_url`) so the client needs no extra calls.
-- `migrations/` — goose SQL, auto-applied on startup. 004 adds `users.email/description`; 005 adds `videos.views`, `video_reactions`, `comments`, `subscriptions`; 006 drops the btree indexes on `videos.title/description` (they broke writes over ~2.7KB) and adds a unique index on `video_metadata(video_id)`. Next: `007_…sql`.
+- `migrations/` — goose SQL, auto-applied on startup. 004 adds `users.email/description`; 005 adds `videos.views`, `video_reactions`, `comments`, `subscriptions`; 006 drops the btree indexes on `videos.title/description` (they broke writes over ~2.7KB) and adds a unique index on `video_metadata(video_id)`; 007 adds `dead_letter_jobs` (no FK, so entries outlive deleted videos); 008 adds a trigger bumping `videos.updated_at` when `stage`/`status` change (not on views/edits). Next: `009_…sql`.
 
 ### Upload + processing flow
 
 1. `POST /api/videos/upload/presign {file_name, size}` → inserts `videos` (stage 1 `upload_pending`) + `video_metadata`, returns `{id, key, url}`; client PUTs to MinIO.
-2. MinIO → Redis hash → worker `ProcessBucketEvents` → `PipelineCoordinator.Advance`. Validate runs, then the thumbnail job; at the phase boundary `Advance` **waits until the video has a title** (status `valid`, thumbnail set).
-3. `POST /api/videos/:id/confirm` saves title/desc/visibility/thumbnail to Postgres, then indexes into ES, and advances to phase 2 (transcode → HLS segments → checksum → publish → `published`).
-   Confirm returns 400 once the video is past phase 1 (stage > 3) or failed. It only calls `Advance` itself when phase 1 is finished (stage 3 `valid` and `video_metadata.thumbnail` set); otherwise the worker's `Advance` at the phase boundary sees the title and continues. `thumbnail` is optional (`""` keeps the auto-generated one) and must be under `thumbnails/{videoId}/`.
+2. MinIO → Redis hash → worker `ProcessBucketEvents` (resolves the key to a video via `VideoMetadataRepo.GetByKey`, cached 24h at presign) → `PipelineCoordinator.Advance`. Validate runs, then the thumbnail job (frame at `min(3s, duration/2)`); at the phase boundary `Advance` **waits until the video has a title** (status `valid`, thumbnail set).
+3. `POST /api/videos/:id/confirm` saves title/desc/visibility/thumbnail to Postgres, then indexes into ES, and advances to phase 2 (transcode → HLS segments → checksum (stage 7 `checksum`) → publish → stage 8 `published`).
+   Confirm returns 400 once the video is past phase 1 (stage > 3) or failed. It only calls `Advance` itself when phase 1 is finished (stage 3 `valid` and `video_metadata.thumbnail` set); otherwise the worker's `Advance` at the phase boundary sees the title and continues. `thumbnail` is optional (`""` keeps the auto-generated one) and must be a jpg/jpeg/png/webp/gif directly under `thumbnails/{videoId}/`. Title (3-100) and description (≤5000, trimmed) lengths count characters (runes), not bytes.
    Transcoding always writes MP4 renditions and skips qualities taller than the source (the smallest is always produced).
 
 A video is publicly visible when `status = 'published' AND visibility = 'public'`; unlisted is watchable by link; owners can see everything.
@@ -112,12 +116,12 @@ A video is publicly visible when `status = 'published' AND visibility = 'public'
 | PUT 🔒 | `/videos/:id` `{title?, description?, visibility?, thumbnail?}` | owner; also re-indexes ES |
 | DELETE 🔒 | `/videos/:id` | owner; removes rows (cascade), ES doc and all object prefixes |
 | POST 🔒 | `/videos/upload/presign`, `/videos/:id/confirm` | upload flow (confirm: owner only) |
-| GET | `/videos/search`, `/videos/suggest`, `/videos/url`, `/videos/:id`, `/video-meta/:id` | original endpoints (search/suggest only return published+public videos; prefer `/browse`) |
+| GET | `/videos/search`, `/videos/suggest`, `/videos/url`, `/videos/:id`, `/video-meta/:id` | original endpoints (search/suggest only return published+public videos; prefer `/browse`; `/videos/url` only signs thumbnail/avatar images; unknown id → 404) |
 | GET 🔒 / PUT 🔒 | `/users/me` | profile; update `{channel_name?, description?, avatar?}` |
 | GET 🔒 | `/users/me/subscriptions` | subscribed channels |
 | GET | `/channels/:id`, `/channels/:id/videos` | public channel + its published videos |
 | POST 🔒 / DELETE 🔒 | `/channels/:id/subscribe` | subscribe / unsubscribe |
-| GET 🔒 / GET | `/files/presign?key=&size=`, `/files/url?key=` | presigned PUT (thumbnails, avatars) / GET — both still accept any key (see known gaps) |
+| GET 🔒 / GET | `/files/presign?key=&size=`, `/files/url?key=` | `services.FileService`. Presigned PUT only for `avatars/{me}/{img}` or `thumbnails/{videoId}/{img}` of a video you own, 1 B–10 MB / presigned GET only for thumbnail and avatar images |
 
 Paged responses are `{items, page, size, has_more}` (`size` capped at 50).
 
@@ -131,7 +135,6 @@ Paged responses are `{items, page, size, has_more}` (`size` capped at 50).
 
 ## Known gaps / later
 
-- **Security:** `/files/presign` signs a PUT for *any* key (overwrite anyone's objects). `/files/url`, `/videos/url` and `GET /videos/:id` hand out presigned GETs for any key, including originals of private videos. Client-supplied `avatar` keys aren't checked against the caller's prefix (video `thumbnail` keys are: they must start with `thumbnails/{videoId}/`).
-
-- `VideoMetadataRepo.GetByKey` returns the metadata id, not the video id. The worker only works because the presign step caches key→video id for 24h.
-- No tests. `users.subscribers` column is unused (counts come from `subscriptions`).
+- Image keys (thumbnails, avatars) are checked by extension only; the uploaded bytes aren't sniffed. A custom thumbnail key isn't checked to exist before confirm.
+- Browse search sets `has_more` from the ES hit count, before Postgres drops unpublished/private hits, so a last page can come back empty.
+- `users.subscribers` column is unused (counts come from `subscriptions`).

@@ -223,7 +223,7 @@ func (p *PGPool) Close() {
 }
 
 // AppTables are the tables created by ./migrations (goose's own table excluded).
-var AppTables = []string{"subscriptions", "comments", "video_reactions", "video_metadata", "videos", "users"}
+var AppTables = []string{"dead_letter_jobs", "subscriptions", "comments", "video_reactions", "video_metadata", "videos", "users"}
 
 // Truncate empties every app table.
 func Truncate(t testing.TB, pool *pgxpool.Pool) {

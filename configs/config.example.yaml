@@ -34,3 +34,9 @@ STREAM:
   BASE_URL: http://localhost
   TOKEN_SECRET: change-me-local-dev-secret
   TOKEN_TTL: 6h
+
+# optional; these are the defaults
+WORKER:
+  MAX_ATTEMPTS: 4          # total runs of a failing pipeline stage, including the first
+  RETRY_BASE_DELAY: 10s    # doubles per retry
+  RETRY_MAX_DELAY: 5m

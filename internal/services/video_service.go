@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"crypto/sha256"
 
@@ -63,7 +64,7 @@ func (v *VideoService) GetVideoKey(ctx context.Context, id string) (string, erro
 	}
 	video, err := v.GetVideo(ctx, id)
 	if err != nil {
-		return "", err
+		return "", notFound(err)
 	}
 	return video.OriginalObjectKey, v.cache.Set(ctx, cacheKey, video.OriginalObjectKey, 24*time.Hour)
 }
@@ -121,10 +122,11 @@ func (v *VideoService) ConfirmVideo(ctx context.Context, id string, dto dto.Vide
 		return nil, fmt.Errorf("%w: invalid video id", ErrBadRequest)
 	}
 	title := strings.TrimSpace(dto.Title)
-	if len(title) < 3 || len(title) > 100 {
+	if n := utf8.RuneCountInString(title); n < 3 || n > 100 {
 		return nil, fmt.Errorf("%w: title must be 3-100 characters", ErrBadRequest)
 	}
-	if len(dto.Description) > 5000 {
+	dto.Description = strings.TrimSpace(dto.Description)
+	if utf8.RuneCountInString(dto.Description) > 5000 {
 		return nil, fmt.Errorf("%w: description must be at most 5000 characters", ErrBadRequest)
 	}
 	// "" keeps the auto-generated thumbnail (the card query falls back to video_metadata.thumbnail)
@@ -202,7 +204,11 @@ func (v *VideoService) UpdateMeta(ctx context.Context, videoId string, sha strin
 	return v.videoMetadataRepo.UpdateMeta(ctx, videoId, sha, dur, vcodec, acodec, w, h)
 }
 func (v *VideoService) GetMeta(ctx context.Context, videoId string) (*models.VideoMetadata, error) {
-	return v.videoMetadataRepo.Get(ctx, videoId)
+	meta, err := v.videoMetadataRepo.Get(ctx, videoId)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	return meta, nil
 }
 func (v *VideoService) UpdateQualities(ctx context.Context, videoId string, qualities []string) error {
 	return v.videoMetadataRepo.UpdateQualities(ctx, videoId, qualities)
