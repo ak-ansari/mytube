@@ -40,3 +40,8 @@ WORKER:
   MAX_ATTEMPTS: 4          # total runs of a failing pipeline stage, including the first
   RETRY_BASE_DELAY: 10s    # doubles per retry
   RETRY_MAX_DELAY: 5m
+
+# optional; logs + metrics for the Grafana stack (make obs-up). Unset LOG_DIR = console only.
+OBSERVABILITY:
+  LOG_DIR: ./logs          # JSON logs: ./logs/api.log, ./logs/worker.log (tailed by Alloy -> Loki)
+  METRICS_ADDR: ":9091"    # worker /metrics (the API serves :8080/metrics)

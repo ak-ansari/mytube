@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/ak-ansari/mytube/internal/api"
 	"github.com/ak-ansari/mytube/internal/auth"
@@ -11,6 +12,7 @@ import (
 	"github.com/ak-ansari/mytube/internal/config"
 	"github.com/ak-ansari/mytube/internal/db"
 	elasticsearch_index "github.com/ak-ansari/mytube/internal/index/elasticsearch"
+	"github.com/ak-ansari/mytube/internal/observability"
 	redisQueue "github.com/ak-ansari/mytube/internal/queue/redis"
 	"github.com/ak-ansari/mytube/internal/repository/postgres"
 	"github.com/ak-ansari/mytube/internal/services"
@@ -30,7 +32,7 @@ func main() {
 	}
 
 	// Initialize logger
-	logr, err := logger.NewZapLogger(conf.Env)
+	logr, err := logger.NewZapLoggerWithFile(conf.Env, "api", logFile(conf.Observability.LogDir, "api"))
 	if err != nil {
 		log.Fatal(err)
 
@@ -41,6 +43,7 @@ func main() {
 	if err != nil {
 		logr.Fatal("failed to init db pool", logger.Error(err))
 	}
+	observability.RegisterDBCollector(dbPool, "api", false)
 
 	// Redis client
 	client := client.NewRedisClient(&conf.Redis)
@@ -82,11 +85,20 @@ func main() {
 	catalogService := services.NewVideoCatalogService(postgres.NewVideoCatalogRepo(dbPool), postgres.NewCommentRepo(dbPool), videoIndex, objStore, cache, streamSigner)
 
 	// Setup router
-	r := api.SetupRouter(service, objStore, verifier, userService, catalogService)
+	r := api.SetupRouter(service, objStore, verifier, userService, catalogService, observability.HTTPMiddleware(logr))
+	r.GET("/metrics", observability.MetricsHandler())
 	logr.Info("starting server", logger.String("port", conf.Server.HttpPort))
 	logr.Info("Application is Running in ", logger.String("env", conf.Env))
 	if err := r.Run(":" + conf.Server.HttpPort); err != nil {
 		logr.Error("server exited with error", logger.Any("error", err))
 		os.Exit(1)
 	}
+}
+
+// logFile is <dir>/<name>.log, or "" (no file sink) when dir is unset.
+func logFile(dir, name string) string {
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, name+".log")
 }

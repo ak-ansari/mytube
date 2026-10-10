@@ -1,0 +1,99 @@
+# Observability stack (Grafana LGTM minus traces): Prometheus for metrics, Loki for logs, Alloy ships logs,
+# Grafana shows both. Layered on docker-compose.yml: `make obs-up` / `make down`.
+# The API and worker run on the host, so Prometheus scrapes them via host.docker.internal and Alloy tails ../logs.
+name: mytube
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle   # curl -X POST localhost:9090/-/reload after editing prometheus.yml
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux; Docker Desktop resolves it already
+    networks:
+      - internal
+
+  loki:
+    image: grafana/loki:3.5.3
+    container_name: loki
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./observability/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - internal
+
+  alloy:
+    image: grafana/alloy:v1.10.2
+    container_name: alloy
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ../logs:/var/log/mytube:ro                      # api.log / worker.log (OBSERVABILITY.LOG_DIR)
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # container logs (nginx, postgres, minio, ...)
+      - alloy_data:/var/lib/alloy/data
+    ports:
+      - "12345:12345"   # Alloy UI: pipeline graph + health
+    depends_on:
+      - loki
+    networks:
+      - internal
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"      # local dev: no login needed to view
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - internal
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    container_name: postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: postgresql://mytube:mytube@postgres:5432/mytube?sslmode=disable   # = postgres service creds
+    depends_on:
+      - postgres
+    networks:
+      - internal
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.74.0
+    container_name: redis-exporter
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      # queue depths: job list, its retry ZSET and the MinIO event hash (REDIS.REDIS_QUEUE_NAME, S3.MINIO_REDIS_QUEUE_NAME)
+      REDIS_EXPORTER_CHECK_SINGLE_KEYS: "video_queue,video_queue:delayed,minio-events-queue"
+    depends_on:
+      - redis
+    networks:
+      - internal
+
+volumes:
+  prometheus_data:
+  loki_data:
+  alloy_data:
+  grafana_data:

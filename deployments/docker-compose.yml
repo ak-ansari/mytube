@@ -40,6 +40,7 @@ services:
       MINIO_NOTIFY_REDIS_ENABLE_primary: "on" 
       MINIO_NOTIFY_REDIS_KEY_primary: minio-events-queue # Redis hash the worker reads (S3.MINIO_REDIS_QUEUE_NAME)
       MINIO_NOTIFY_REDIS_FORMAT_primary: "namespace" # Use 'namespace' for a hash map or 'access' for a list/pubsub
+      MINIO_PROMETHEUS_AUTH_TYPE: public # lets Prometheus scrape :9000/minio/v2/metrics/cluster (docker network only)
     ports:
       - "9001:9001"
     volumes:

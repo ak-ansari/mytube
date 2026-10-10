@@ -57,6 +57,13 @@ type Worker struct {
 	RetryBaseDelay string `yaml:"RETRY_BASE_DELAY"` // Go duration before the first retry; doubles per retry
 	RetryMaxDelay  string `yaml:"RETRY_MAX_DELAY"`  // Go duration cap on a single retry delay
 }
+
+// Observability configures the log file Grafana Alloy ships to Loki and the worker's Prometheus endpoint.
+// Every field is optional; empty LOG_DIR disables the file sink.
+type Observability struct {
+	LogDir      string `yaml:"LOG_DIR"`      // JSON logs go to <LOG_DIR>/<api|worker>.log, e.g. ./logs
+	MetricsAddr string `yaml:"METRICS_ADDR"` // worker /metrics listen address, e.g. :9091 (the API serves :HTTP_PORT/metrics)
+}
 type Server struct {
 	HttpPort string `yaml:"HTTP_PORT"`
 }
@@ -70,6 +77,8 @@ type Config struct {
 	Keycloak Keycloak `yaml:"KEYCLOAK"`
 	Stream   Stream   `yaml:"STREAM"`
 	Worker   Worker   `yaml:"WORKER"`
+
+	Observability Observability `yaml:"OBSERVABILITY"`
 }
 
 func validateConfigPath(path string) error {

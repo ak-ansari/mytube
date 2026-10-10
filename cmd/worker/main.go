@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	redisCache "github.com/ak-ansari/mytube/internal/cache/redis"
@@ -11,6 +12,7 @@ import (
 	"github.com/ak-ansari/mytube/internal/db"
 	elasticsearch_index "github.com/ak-ansari/mytube/internal/index/elasticsearch"
 	"github.com/ak-ansari/mytube/internal/media"
+	"github.com/ak-ansari/mytube/internal/observability"
 	redisQueue "github.com/ak-ansari/mytube/internal/queue/redis"
 	"github.com/ak-ansari/mytube/internal/repository/postgres"
 	"github.com/ak-ansari/mytube/internal/services"
@@ -31,7 +33,7 @@ func main() {
 	}
 
 	// --- Initialize logger ---
-	log, err := logger.NewZapLogger(conf.Env)
+	log, err := logger.NewZapLoggerWithFile(conf.Env, "worker", logFile(conf.Observability.LogDir, "worker"))
 	if err != nil {
 		panic(err)
 	}
@@ -41,6 +43,10 @@ func main() {
 	pool, err := db.NewPool(conf, log)
 	if err != nil {
 		log.Fatal("Failed to init db pool", logger.Error(err))
+	}
+	observability.RegisterDBCollector(pool, "worker", true)
+	if conf.Observability.MetricsAddr != "" {
+		observability.ServeMetrics(ctx, conf.Observability.MetricsAddr, log)
 	}
 
 	// --- Storage ---
@@ -76,7 +82,7 @@ func main() {
 	checksum := workers.NewChecksum(log)
 	publish := workers.NewPublish(service, log)
 	thumbnail := workers.NewThumbnail(service, ffm, store, log)
-	handlerRegistry := workers.NewHandlerRegistry(validate, thumbnail, transcode, segment, publish, checksum)
+	handlerRegistry := workers.NewHandlerRegistry(validate, thumbnail, transcode, segment, publish, checksum).Instrument()
 	deadLetterRepo := postgres.NewDeadLetterRepo(pool)
 	retryPolicy := workers.RetryPolicyFromConfig(conf.Worker)
 	runner := workers.NewRunner(queue, cache, conf.Redis.RedisQueueName, conf.S3.MinioRedisQueueName, log, handlerRegistry, pipelineCoordinator, service).
@@ -99,4 +105,12 @@ func main() {
 	// let workers finish their current iteration before exiting
 	runner.Wait()
 	log.Info("Workers stopped")
+}
+
+// logFile is <dir>/<name>.log, or "" (no file sink) when dir is unset.
+func logFile(dir, name string) string {
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, name+".log")
 }

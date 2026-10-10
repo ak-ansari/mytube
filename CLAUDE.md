@@ -17,6 +17,7 @@ All commands run from the repo root (migrations are loaded from `./migrations` r
 ```bash
 cp configs/config.example.yaml configs/config.yaml   # first time; config.yaml is gitignored
 make               # docker-compose up (postgres, redis, minio, nginx, elasticsearch, kibana, keycloak) + MinIO bucket (needs `mc`)
+make obs-up        # observability: Grafana, Prometheus, Loki, Alloy, postgres/redis exporters (see "Observability")
 make keycloak-dev  # once per Keycloak volume: admin console over http + realm loginTheme=mytube
 make run-api       # API on :8080
 make run-worker    # pipeline worker (needs ffmpeg/ffprobe on PATH)
@@ -27,11 +28,20 @@ go test -tags integration -count=1 -p 1 ./...         # real Postgres/Redis/MinI
 go test -tags e2e -count=1 -v -timeout 10m ./test/e2e/  # black-box against a running API + worker (E2E_API_URL, default :8080)
 ```
 
-Ports: **HLS gateway 80** (nginx), Postgres 5432, Redis 6379, MinIO S3 API via nginx **9002** (presigned URLs point here), MinIO console 9001, ES 9200, Kibana 5601, **Keycloak 8180** (admin/admin).
+Ports: **HLS gateway 80** (nginx), Postgres 5432, Redis 6379, MinIO S3 API via nginx **9002** (presigned URLs point here), MinIO console 9001, ES 9200, Kibana 5601, **Keycloak 8180** (admin/admin). Observability: **Grafana 3000** (admin/admin, anonymous view), Prometheus 9090, Loki 3100, Alloy UI 12345, worker metrics 9091.
 
 Gotchas:
 - A Homebrew `redis-server` on `127.0.0.1:6379` shadows the Docker Redis. MinIO publishes upload events into the Docker Redis, so the worker never sees uploads (videos stay `upload_pending`). Stop the local Redis (`brew services stop redis`) or point `REDIS.REDIS_HOST` at the Docker one.
 - The MinIO bucket needs an event rule sending `originals/` puts to Redis (`mc event add myminio/mytube arn:minio:sqs::primary:redis --event put,delete --prefix originals/`); it persists in the MinIO volume.
+
+## Observability (logs + metrics)
+
+`make obs-up` layers `deployments/docker-compose.observability.yml` on the app stack (same project, `make down` stops both). Grafana dashboard **MyTube → MyTube Overview** is provisioned from `deployments/observability/grafana/dashboards/` (UI edits are lost on restart; export the JSON there to keep them).
+
+- **Logs:** with `OBSERVABILITY.LOG_DIR` set, `logger.NewZapLoggerWithFile` tees JSON lines (ANSI colours stripped, `service=api|worker`, rotated at 50 MB) to `logs/{api,worker}.log`; console output is unchanged. Alloy (`observability/alloy/config.alloy`) tails them into Loki with labels `job="mytube"`, `service`, `level`, and also ships every `mytube` container's stdout (`job="docker"`, `container`). `observability.HTTPMiddleware` writes one Info access-log line per request (`route`, `status`, `duration_ms`). Query e.g. `{service="api"} | json | status >= 500` or `{service="worker"} | json | videoId="…"`.
+- **Metrics:** API serves `:8080/metrics`, worker `OBSERVABILITY.METRICS_ADDR` (`:9091`); Prometheus reaches both via `host.docker.internal`. App metrics (`internal/observability`): `mytube_http_requests_total{method,route,status}`, `mytube_http_request_duration_seconds`, `mytube_pipeline_stage_runs_total{stage,result}` + `_duration_seconds` (handlers wrapped by `HandlerRegistry.Instrument()`), pgx pool gauges, and worker-only gauges read from Postgres per scrape: `mytube_videos{stage,status}`, `mytube_dead_letter_jobs{source,stage}`. Infra: postgres-exporter, redis-exporter (queue depth via `redis_key_size{key=…}` for `video_queue`, `video_queue:delayed`, `minio-events-queue`), MinIO's own endpoint (`MINIO_PROMETHEUS_AUTH_TYPE=public`).
+- Route labels use gin's template (`/api/videos/:id`), so ids never become labels. Keep it that way (no ids/user ids as labels).
+- Gotcha: recreating `minio` gives it a new IP and nginx keeps the old one (502 on :9002). `docker restart nginx`.
 
 ## Private bucket + HLS playback gateway
 
@@ -66,9 +76,10 @@ internal/                all application code (not importable from outside the m
   models/                domain + API structs    storage/, index/, queue/, cache/, media/, workers/, jobs/, config/, db/, util/
   workers/testdata/      sample MinIO bucket event
 pkg/                     reusable, app-agnostic clients (logger, elastic, redis)
+logs/                    gitignored app JSON logs (OBSERVABILITY.LOG_DIR) tailed by Alloy
 migrations/              goose SQL (applied on startup from ./migrations)
 configs/                 config.example.yaml (+ your gitignored config.yaml)
-deployments/             docker-compose.yml (project name pinned to "mytube"), nginx/templates/ (envsubst-rendered), keycloak/ (import/ realm JSON, themes/mytube login theme)
+deployments/             docker-compose.yml (project name pinned to "mytube"), docker-compose.observability.yml + observability/ (prometheus, loki, alloy, grafana provisioning), nginx/templates/ (envsubst-rendered), keycloak/ (import/ realm JSON, themes/mytube login theme)
 docs/                    todo.txt
 ```
 

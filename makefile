@@ -1,12 +1,14 @@
 SHELL := /bin/bash
 CONFIG=configs/config.yaml
 COMPOSE=docker-compose -f deployments/docker-compose.yml
+# app stack + Grafana/Prometheus/Loki/Alloy (deployments/docker-compose.observability.yml)
+OBS_COMPOSE=$(COMPOSE) -f deployments/docker-compose.observability.yml
 # must match deployments/docker-compose.yml (minio service) and configs/config.yaml (S3.*)
 MINIO_USER=mytube
 MINIO_PASSWORD=mytube123
 MINIO_BUCKET=mytube
 
-.PHONY: all docker-up setup-bucket keycloak-dev run-api run-worker down
+.PHONY: all docker-up obs-up obs-down setup-bucket keycloak-dev run-api run-worker down
 
 # Default target (runs when you just type `make`)
 all: docker-up setup-bucket
@@ -14,6 +16,14 @@ all: docker-up setup-bucket
 docker-up:
 	@echo "Starting docker-compose services..."
 	@$(COMPOSE) up -d
+
+obs-up:
+	@mkdir -p logs
+	@$(OBS_COMPOSE) up -d
+	@echo "✅ Grafana http://localhost:3000 (admin/admin) · Prometheus http://localhost:9090 · Alloy http://localhost:12345"
+
+obs-down:
+	@$(OBS_COMPOSE) stop prometheus loki alloy grafana postgres-exporter redis-exporter
 
 # The bucket is private. segments/* is anonymously readable only on the docker network (MinIO's :9000 is not
 # published); the public path to it is the nginx gateway on :80, which checks a signed token per video.
@@ -38,5 +48,5 @@ run-worker:
 
 down:
 	@echo "Stopping docker services..."
-	@$(COMPOSE) down
+	@$(OBS_COMPOSE) down
 	@echo "✅ All infra shut down. Stop API/Worker manually with Ctrl-C in their tabs."

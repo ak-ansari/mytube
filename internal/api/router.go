@@ -12,12 +12,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(videoService *services.VideoService, objectStore storage.ObjectStore, verifier *auth.KeycloakVerifier, userService *services.UserService, catalogService *services.VideoCatalogService) *gin.Engine {
+func SetupRouter(videoService *services.VideoService, objectStore storage.ObjectStore, verifier *auth.KeycloakVerifier, userService *services.UserService, catalogService *services.VideoCatalogService, middlewares ...gin.HandlerFunc) *gin.Engine {
 	r := gin.Default()
 	// no proxy is trusted, so ClientIP() is the socket peer and X-Forwarded-For can't be spoofed
 	if err := r.SetTrustedProxies(nil); err != nil {
 		panic(err)
 	}
+	// e.g. observability.HTTPMiddleware; registered before the routes so it wraps all of them
+	r.Use(middlewares...)
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:5173"}, // frontend URLs
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
