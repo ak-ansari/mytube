@@ -7,7 +7,7 @@ if ! command -v yq >/dev/null 2>&1; then
   brew install yq
 fi
 
-CONFIG_FILE="./internal/config/config.yaml"
+CONFIG_FILE="./configs/config.yaml"
 
 # ENV
 export ENV=$(yq -r '.ENV' $CONFIG_FILE)

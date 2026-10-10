@@ -12,7 +12,7 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/api/main.go",
             "cwd": "${workspaceFolder}",
-            "args":["-config","${workspaceFolder}/internal/config/config.yaml"]
+            "args":["-config","${workspaceFolder}/configs/config.yaml"]
 
         },
         {
@@ -22,7 +22,7 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/worker/main.go",
             "cwd": "${workspaceFolder}",
-            "args":["-config","${workspaceFolder}/internal/config/config.yaml"]
+            "args":["-config","${workspaceFolder}/configs/config.yaml"]
 
         }
     ]

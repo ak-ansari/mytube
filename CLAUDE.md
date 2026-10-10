@@ -15,7 +15,7 @@ Frontend lives in the sibling repo `../mytube-frontend` (Vue 3) and talks to thi
 All commands run from the repo root (migrations are loaded from `./migrations` relative to CWD).
 
 ```bash
-cp internal/config/config.example.yaml internal/config/config.yaml   # first time; config.yaml is gitignored
+cp configs/config.example.yaml configs/config.yaml   # first time; config.yaml is gitignored
 make               # docker-compose up (postgres, redis, minio, nginx, elasticsearch, kibana, keycloak) + MinIO bucket (needs `mc`, `yq`)
 make keycloak-dev  # once per fresh Keycloak volume: lets the admin console work over http
 make run-api       # API on :8080
@@ -32,12 +32,32 @@ Gotchas:
 
 ## Auth (Keycloak)
 
-- Realm `mytube` is imported from `keycloak/mytube-realm.json` on first start: public client `mytube-frontend` (PKCE, redirect `http://localhost:5173/*`, direct-access grants on for curl testing), self-registration enabled, demo user **demo / demo123**.
+- Realm `mytube` is imported from `deployments/keycloak/mytube-realm.json` on first start: public client `mytube-frontend` (PKCE, redirect `http://localhost:5173/*`, direct-access grants on for curl testing), self-registration enabled, demo user **demo / demo123**.
 - `internal/auth/keycloak.go` verifies RS256 access tokens against the realm JWKS (`KEYCLOAK.URL/realms/REALM`), checks `iss` and `azp == CLIENT_ID`. Token `iss` must match `KEYCLOAK.URL` exactly, so frontend and API must both use `http://localhost:8180`.
 - `middleware.Authenticate` (on all of `/api`): no header → anonymous; invalid token → 401; valid → `UserService.SyncFromToken` upserts `users` (id = Keycloak `sub`) and sets `c.Get("user")` (`*models.User`).
 - `middleware.RequireUser()` guards write routes; `middleware.RequireVideoOwner(catalog)` guards `/:id` routes by uploader. Helpers: `middleware.CurrentUser(c)`, `CurrentUserID(c)` (nil when anonymous).
 - The old hardcoded `middleware.AuthMiddleware()` stub is no longer wired.
 - Token for curl: `curl -s -X POST localhost:8180/realms/mytube/protocol/openid-connect/token -d grant_type=password -d client_id=mytube-frontend -d username=demo -d password=demo123`
+
+## Layout (golang-standards/project-layout)
+
+```
+cmd/api, cmd/worker      entrypoints (main.go only wires dependencies)
+internal/                all application code (not importable from outside the module)
+  api/                   gin router, routes/, handlers/, middleware/, dto/
+  auth/                  Keycloak token verification
+  services/              business logic          repository/ (+ postgres/)  data access
+  models/                domain + API structs    storage/, index/, queue/, cache/, media/, workers/, jobs/, config/, db/, util/
+  workers/testdata/      sample MinIO bucket event
+pkg/                     reusable, app-agnostic clients (logger, elastic, redis)
+migrations/              goose SQL (applied on startup from ./migrations)
+configs/                 config.example.yaml (+ your gitignored config.yaml)
+deployments/             docker-compose.yml (project name pinned to "mytube"), nginx.conf, keycloak/ realm import
+scripts/                 envexporter.sh (exports configs/config.yaml values for docker-compose)
+docs/                    todo.txt
+```
+
+Run every command from the repo root. `make` passes `-f deployments/docker-compose.yml`; when calling docker-compose by hand, source `scripts/envexporter.sh` first.
 
 ## Architecture
 
@@ -48,7 +68,7 @@ Gotchas:
 - `internal/repository/*.go` — interfaces; `internal/repository/postgres/*` — pgx implementations (raw SQL). `video_catalog_pg_repo.go` builds the joined "video card" query (videos + users + video_metadata) and owns `publishedVideoCond`.
 - `internal/storage` — `ObjectStore` + MinIO impl. Keys: `originals/{videoId}/original.{ext}`, `thumbnails/{videoId}/…` (auto `{videoId}.jpeg`, custom uploads `{uuid}.{ext}`), `transcoded/{videoId}/{q}.mp4`, `segments/{videoId}/master.m3u8`, `avatars/{userId}/{uuid}.{ext}`. Bucket is anonymous-read so HLS relative URLs resolve.
 - `internal/index/elasticsearch` — `video_index`; search returns IDs, rows then come from Postgres.
-- `models/catalog.go` — API shapes: `VideoCard`, `VideoDetails`, `Channel`, `Profile`, `Comment`, `Page[T]`. Services fill presigned `*_url` fields (`thumbnail_url`, `avatar_url`, `manifest_url`) so the client needs no extra calls.
+- `internal/models/catalog.go` — API shapes: `VideoCard`, `VideoDetails`, `Channel`, `Profile`, `Comment`, `Page[T]`. Services fill presigned `*_url` fields (`thumbnail_url`, `avatar_url`, `manifest_url`) so the client needs no extra calls.
 - `migrations/` — goose SQL, auto-applied on startup. 004 adds `users.email/description`; 005 adds `videos.views`, `video_reactions`, `comments`, `subscriptions`. Next: `006_…sql`.
 
 ### Upload + processing flow

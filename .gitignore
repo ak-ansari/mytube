@@ -3,3 +3,4 @@ config.yml
 config.yaml
 .log
 .pid
+.DS_Store

@@ -68,7 +68,7 @@ func validateConfigPath(path string) error {
 
 func parseFlag() (string, error) {
 	var configPath string
-	flag.StringVar(&configPath, "config", "./config.yaml", "path to config file")
+	flag.StringVar(&configPath, "config", "./configs/config.yaml", "path to config file")
 	flag.Parse()
 	if err := validateConfigPath(configPath); err != nil {
 		return "", err

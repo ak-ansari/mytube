@@ -1,3 +1,5 @@
+name: mytube
+
 services:
   postgres:
     image: postgres:15

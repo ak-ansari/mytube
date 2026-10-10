@@ -1,6 +1,7 @@
 SHELL := /bin/bash
-CONFIG=internal/config/config.yaml
-ENV_SCRIPT=./envexporter.sh
+CONFIG=configs/config.yaml
+ENV_SCRIPT=./scripts/envexporter.sh
+COMPOSE=docker-compose -f deployments/docker-compose.yml
 
 .PHONY: all docker-up setup-bucket keycloak-dev run-api run-worker down
 
@@ -9,7 +10,7 @@ all: docker-up setup-bucket
 
 docker-up:
 	@echo "Starting docker-compose services..."
-	@bash -c "source $(ENV_SCRIPT) && docker-compose up -d"
+	@bash -c "source $(ENV_SCRIPT) && $(COMPOSE) up -d"
 
 setup-bucket:
 	@echo "Configuring MinIO bucket..."
@@ -33,5 +34,5 @@ run-worker:
 
 down:
 	@echo "Stopping docker services..."
-	@docker-compose down
+	@bash -c "source $(ENV_SCRIPT) && $(COMPOSE) down"
 	@echo "✅ All infra shut down. Stop API/Worker manually with Ctrl-C in their tabs."

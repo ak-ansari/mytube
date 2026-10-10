@@ -1,6 +1,6 @@
 package jobs
 
-import "github.com/ak-ansari/mytube/models"
+import "github.com/ak-ansari/mytube/internal/models"
 
 type JobPayload struct {
 	VideoID string             `json:"video_id"`

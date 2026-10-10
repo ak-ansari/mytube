@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/ak-ansari/mytube/internal/auth"
+	"github.com/ak-ansari/mytube/internal/models"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/util"
-	"github.com/ak-ansari/mytube/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
