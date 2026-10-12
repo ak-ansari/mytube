@@ -2,14 +2,15 @@ package workers
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/media"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
+	"github.com/ak-ansari/mytube/pkg/logger"
 )
 
 type Thumbnail struct {
@@ -28,7 +29,18 @@ func NewThumbnail(s *services.VideoService, ffm *media.FFM, store storage.Object
 	}
 }
 
-func (t *Thumbnail) Handle(ctx context.Context, payload jobs.JobPayload) error {
+// thumbnailSeek picks the frame time: 3s in, or the middle of clips shorter than 6s.
+func thumbnailSeek(durationSeconds int) int {
+	if durationSeconds <= 0 {
+		return 0
+	}
+	if half := durationSeconds / 2; half < 3 {
+		return half
+	}
+	return 3
+}
+
+func (t *Thumbnail) Handle(ctx context.Context, payload *jobs.JobPayload) error {
 	t.log.Info("Creating thumbnail",
 		logger.String("videoId", payload.VideoID))
 
@@ -48,18 +60,23 @@ func (t *Thumbnail) Handle(ctx context.Context, payload jobs.JobPayload) error {
 		return err
 	}
 
-	outDir := filepath.Join(os.TempDir(), payload.VideoID)
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	outDir, err := os.MkdirTemp("", "mytube-thumbnail-"+payload.VideoID+"-*")
+	if err != nil {
 		t.log.Error("Failed to create temp directory",
-			logger.String("path", outDir),
+			logger.String("videoId", payload.VideoID),
 			logger.Error(err))
 		return err
 	}
+	defer os.RemoveAll(outDir)
 
 	filename := payload.VideoID + ".jpeg"
 	outPath := filepath.Join(outDir, filename)
 
-	if err := t.ffm.CreateThumbnail(ctx, url, outPath, 3); err != nil {
+	seek := 3
+	if meta, err := t.service.GetMeta(ctx, payload.VideoID); err == nil && meta.DurationSeconds != nil {
+		seek = thumbnailSeek(*meta.DurationSeconds)
+	}
+	if err := t.ffm.CreateThumbnail(ctx, url, outPath, seek); err != nil {
 		t.log.Error("Failed to create thumbnail",
 			logger.String("videoId", payload.VideoID),
 			logger.String("file", outPath),
@@ -67,11 +84,16 @@ func (t *Thumbnail) Handle(ctx context.Context, payload jobs.JobPayload) error {
 		return err
 	}
 
+	// ffmpeg exits 0 without writing a frame when the seek lands past the end of the video
+	if !FileExists(outPath) {
+		return jobs.Permanent(fmt.Errorf("ffmpeg produced no thumbnail frame at %ds", seek))
+	}
+
 	t.log.Success("Thumbnail created",
 		logger.String("videoId", payload.VideoID),
 		logger.String("file", outPath))
 
-	remotePath := filepath.Join("thumbnails", payload.VideoID, filename)
+	remotePath := filepath.Join(string(storage.DirectoryThumbnails), payload.VideoID, filename)
 	t.log.Info("Uploading thumbnail",
 		logger.String("videoId", payload.VideoID),
 		logger.String("remotePath", remotePath))

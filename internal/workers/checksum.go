@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/ak-ansari/mytube/internal/jobs"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
+	"github.com/ak-ansari/mytube/pkg/logger"
 )
 
 type Checksum struct {
@@ -17,7 +17,7 @@ func NewChecksum(log logger.Logger) *Checksum {
 	}
 }
 
-func (c *Checksum) Handle(ctx context.Context, payload jobs.JobPayload) error {
+func (c *Checksum) Handle(ctx context.Context, payload *jobs.JobPayload) error {
 	c.log.Info("Checksum validation started",
 		logger.String("videoId", payload.VideoID))
 

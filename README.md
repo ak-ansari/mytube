@@ -12,4 +12,4 @@ A minimal, runnable pipeline for a YouTube-like backend in Go using:
 
 ## Run infra
 ```bash
-docker-compose up -d
+make   # docker-compose -f deployments/docker-compose.yml up -d + bucket setup

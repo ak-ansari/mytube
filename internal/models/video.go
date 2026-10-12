@@ -9,27 +9,37 @@ import (
 type VideoStatus string
 
 const (
-	StatusUploaded   VideoStatus = "uploaded"
-	StatusValid      VideoStatus = "valid"
-	StatusProcessing VideoStatus = "processing"
-	StatusReady      VideoStatus = "ready"
-	StatusFailed     VideoStatus = "failed"
+	StatusUploadPending      VideoStatus = "upload_pending"
+	StatusUploaded           VideoStatus = "uploaded"
+	StatusValid              VideoStatus = "valid"
+	StatusThumbnailGenerated VideoStatus = "thumbnail_generated"
+	StatusTranscoded         VideoStatus = "transcoded"
+	StatusSegmentGenerated   VideoStatus = "segment_generated"
+	StatusChecksum           VideoStatus = "checksum"
+	StatusPublished          VideoStatus = "published"
+	StatusDone               VideoStatus = "done"
+	StatusPhase1Failed       VideoStatus = "phase_1_failed"
+	StatusPhase2Failed       VideoStatus = "phase_2_failed"
+)
+
+type VideoVisibility string
+
+const (
+	VisibilityPublic   VideoVisibility = "public"
+	VisibilityPrivate  VideoVisibility = "private"
+	VisibilityUnlisted VideoVisibility = "unlisted"
 )
 
 type Video struct {
-	ID                 uuid.UUID   `json:"id"`
-	Filename           string      `json:"filename"`
-	OriginalObjectKey  string      `json:"original_object_key"`
-	SHA256             *string     `json:"sha256,omitempty"`
-	DurationSeconds    *int        `json:"duration_seconds,omitempty"`
-	CodecVideo         *string     `json:"codec_video,omitempty"`
-	CodecAudio         *string     `json:"codec_audio,omitempty"`
-	Width              *int        `json:"width,omitempty"`
-	Height             *int        `json:"height,omitempty"`
-	Status             VideoStatus `json:"status"`
-	AvailableQualities []string    `json:"available_qualities,omitempty"`
-	ManifestPath       *string     `json:"manifest_path,omitempty"`
-	Thumbnail          *string     `json:"thumbnail,omitempty"`
-	CreatedAt          time.Time   `json:"created_at"`
-	UpdatedAt          time.Time   `json:"updated_at"`
+	ID          uuid.UUID        `json:"id"`                    // primary key
+	UserID      uuid.UUID        `json:"user_id"`               // uploader
+	FileKey     string           `json:"file_key"`              // file address at cloude store
+	Thumbnail   *string          `json:"thumbnail"`             // address to video thumbnail file
+	Title       *string          `json:"title"`                 // title of the video
+	Description *string          `json:"description,omitempty"` // description about video
+	Visibility  *VideoVisibility `json:"visibility"`            // "public", "private", "unlisted"
+	Status      VideoStatus      `json:"status"`                // "pending", "uploaded", "processing", "ready"
+	Stage       int              `json:"stage"`                 // current pipeline stage of video
+	CreatedAt   time.Time        `json:"created_at"`            // timestamp
+	UpdatedAt   time.Time        `json:"updated_at"`            // timestamp
 }

@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/ak-ansari/mytube/internal/models"
 	"github.com/google/uuid"
@@ -15,64 +14,91 @@ func NewVideoRepo(pool *pgxpool.Pool) *VideoRepo {
 	return &VideoRepo{pool: pool}
 }
 
-func (r *VideoRepo) InsertBasic(ctx context.Context, v models.Video) error {
+func (r *VideoRepo) InsertBasic(ctx context.Context, v *models.Video) error {
 	_, err := r.pool.Exec(ctx, `
-        INSERT INTO videos (id, filename, original_object_key, status)
-        VALUES ($1,$2,$3,$4)
-    `, v.ID, v.Filename, v.OriginalObjectKey, v.Status)
+        INSERT INTO videos (id, file_key, status, stage ,user_id)
+        VALUES ($1,$2,$3,$4,$5)
+    `, v.ID, v.FileKey, v.Status, v.Stage, v.UserID)
+	return err
+}
+func (r *VideoRepo) UpdateVideo(ctx context.Context, v *models.Video) error {
+	_, err := r.pool.Exec(ctx, `
+        UPDATE videos SET title=$2, thumbnail=$3, description=$4, visibility=$5 WHERE id=$1
+    `, v.ID, v.Title, v.Thumbnail, v.Description, v.Visibility)
 	return err
 }
 
-func (r *VideoRepo) UpdateMeta(ctx context.Context, videoId string, sha string, dur int, vcodec string, acodec string, w int, h int, status models.VideoStatus) error {
-	id, _ := uuid.Parse(videoId)
-	_, err := r.pool.Exec(ctx, `
-        UPDATE videos SET sha256=$2, duration_seconds=$3, codec_video=$4, codec_audio=$5, width=$6, height=$7, status=$8,updated_at=now() WHERE id=$1
-    `, id, sha, dur, vcodec, acodec, w, h, status)
-	return err
-}
-func (r *VideoRepo) UpdateQualities(ctx context.Context, videoId string, qualities []string, status models.VideoStatus) error {
-	id, _ := uuid.Parse(videoId)
-	_, err := r.pool.Exec(ctx, `
-        UPDATE videos SET available_qualities=$2, status=$3, updated_at=now() WHERE id=$1
-    `, id, qualities, status)
-	return err
-}
-func (r *VideoRepo) UpdateManifest(ctx context.Context, videoId string, manifest string) error {
-	id, _ := uuid.Parse(videoId)
-	_, err := r.pool.Exec(ctx, `
-        UPDATE videos SET manifest_path=$2,updated_at=now() WHERE id=$1
-    `, id, manifest)
-	return err
-}
-func (r *VideoRepo) UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus) error {
-	id, err := uuid.Parse(videoId)
-	if err != nil {
-		return fmt.Errorf("invalid videoId: %w", err)
-	}
-
-	query := "UPDATE videos SET status=$2,updated_at=now() WHERE id=$1"
-
-	_, err = r.pool.Exec(ctx, query, id, status)
-	return err
-}
-
-func (r *VideoRepo) UpdateThumbnail(ctx context.Context, videoId string, thumbnailKey string) error {
-	id, _ := uuid.Parse(videoId)
-	_, err := r.pool.Exec(ctx, `
-        UPDATE videos SET thumbnail=$2, updated_at=now() WHERE id=$1
-    `, id, thumbnailKey)
-	return err
-}
-
-func (r *VideoRepo) Get(ctx context.Context, videoId string) (*models.Video, error) {
-	id, _ := uuid.Parse(videoId)
+func (r *VideoRepo) Get(ctx context.Context, id string) (*models.Video, error) {
+	parsedId, _ := uuid.Parse(id)
 	row := r.pool.QueryRow(ctx, `
-        SELECT id, filename, original_object_key, sha256, duration_seconds, codec_video, codec_audio, width, height, status, available_qualities, manifest_path, thumbnail, created_at, updated_at
+        SELECT id, user_id, file_key, thumbnail, title, description, visibility, status, stage,created_at, updated_at
         FROM videos WHERE id=$1
-    `, id)
+    `, parsedId)
 	var v models.Video
-	if err := row.Scan(&v.ID, &v.Filename, &v.OriginalObjectKey, &v.SHA256, &v.DurationSeconds, &v.CodecVideo, &v.CodecAudio, &v.Width, &v.Height, &v.Status, &v.AvailableQualities, &v.ManifestPath, &v.Thumbnail, &v.CreatedAt, &v.UpdatedAt); err != nil {
+	if err := row.Scan(&v.ID, &v.UserID, &v.FileKey, &v.Thumbnail, &v.Title, &v.Description, &v.Visibility, &v.Status, &v.Stage, &v.CreatedAt, &v.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &v, nil
+}
+func (r *VideoRepo) GetByIds(ctx context.Context, ids []string) ([]*models.Video, error) {
+	parsedIds := make([]uuid.UUID, 0, len(ids))
+
+	for _, id := range ids {
+		parsedId, err := uuid.Parse(id)
+		if err != nil {
+			return nil, err
+		}
+		parsedIds = append(parsedIds, parsedId)
+	}
+
+	rows, err := r.pool.Query(ctx, `
+        SELECT id, user_id, file_key, thumbnail, title, description, visibility, status, stage, created_at, updated_at
+        FROM videos 
+        WHERE id = ANY($1)
+    `, parsedIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	videos := make([]*models.Video, 0)
+
+	for rows.Next() {
+		var v models.Video
+		if err := rows.Scan(
+			&v.ID, &v.UserID, &v.FileKey, &v.Thumbnail, &v.Title, &v.Description,
+			&v.Visibility, &v.Status, &v.Stage, &v.CreatedAt, &v.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		videos = append(videos, &v)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return videos, nil
+}
+
+func (r *VideoRepo) UpdateState(ctx context.Context, videoId string, stage int, status models.VideoStatus) error {
+	parsedId, _ := uuid.Parse(videoId)
+	_, err := r.pool.Exec(ctx, `UPDATE videos SET stage=$2, status=$3 WHERE id=$1`, parsedId, stage, status)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *VideoRepo) AdvanceState(ctx context.Context, videoId string, fromStage, toStage int, status models.VideoStatus) (bool, error) {
+	parsedId, _ := uuid.Parse(videoId)
+	// failed videos keep their stage number, so exclude them explicitly
+	tag, err := r.pool.Exec(ctx, `
+        UPDATE videos SET stage=$3, status=$4
+        WHERE id=$1 AND stage=$2 AND status NOT IN ('phase_1_failed', 'phase_2_failed')
+    `, parsedId, fromStage, toStage, status)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }

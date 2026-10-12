@@ -1,0 +1,6 @@
+.git
+logs
+configs/config.yaml
+deployments
+docs
+test

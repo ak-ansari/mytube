@@ -1,5 +1,7 @@
 package util
 
+import "strconv"
+
 type Quality struct {
 	Height    int
 	Width     int
@@ -22,4 +24,14 @@ func GetQualityMap() map[string]Quality {
 		qualityMap[q.Label] = q
 	}
 	return qualityMap
+}
+func ParseIntWithDefault(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
 }

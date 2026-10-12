@@ -1,0 +1,123 @@
+# Local dev stack. Values here must match configs/config.yaml (DB.*, S3.*, STREAM.TOKEN_SECRET).
+name: mytube
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: mytube
+      POSTGRES_PASSWORD: mytube
+      POSTGRES_DB: mytube
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  redis:
+    image: redis:7
+    container_name: redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    expose:
+      - "6379"
+    networks:
+      - internal
+
+  minio:
+    image: minio/minio
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_SERVER_URL: "http://minio:9000"
+      MINIO_ROOT_USER: mytube
+      MINIO_ROOT_PASSWORD: mytube123
+      # The address uses the Docker service name 'redis' and default port '6379'
+      MINIO_NOTIFY_REDIS_REDIS_ADDRESS_primary: "redis:6379" 
+      MINIO_NOTIFY_REDIS_ENABLE_primary: "on" 
+      MINIO_NOTIFY_REDIS_KEY_primary: minio-events-queue # Redis hash the worker reads (S3.MINIO_REDIS_QUEUE_NAME)
+      MINIO_NOTIFY_REDIS_FORMAT_primary: "namespace" # Use 'namespace' for a hash map or 'access' for a list/pubsub
+      MINIO_PROMETHEUS_AUTH_TYPE: public # lets Prometheus scrape :9000/minio/v2/metrics/cluster (docker network only)
+    ports:
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    environment:
+      VIDEO_TOKEN_SECRET: change-me-local-dev-secret   # = STREAM.TOKEN_SECRET
+      MINIO_BUCKET: mytube
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+    ports:
+      - "80:80"
+      - "9002:9002"
+    depends_on:
+      - minio
+    networks:
+      - internal
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.2.1
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - xpack.security.enabled=false   # disable security for local/dev
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    networks:
+      - internal
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.2.1
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    networks:
+      - internal
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    container_name: keycloak
+    # dev mode (embedded H2, http); realm "mytube" is imported from ./keycloak/import on first start
+    command: ["start-dev", "--import-realm", "--http-port=8080"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - "8180:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+      # myTube login theme (start-dev disables theme caching, so edits show up on refresh)
+      - ./keycloak/themes/mytube:/opt/keycloak/themes/mytube:ro
+    networks:
+      - internal
+
+volumes:
+  keycloak_data:
+  pgdata:
+  miniodata:
+  esdata:
+
+networks:
+  internal:
+    driver: bridge

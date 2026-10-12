@@ -1,0 +1,73 @@
+// Grafana Alloy: ships logs to Loki.
+//  1. api.log / worker.log — zap JSON lines written by the Go apps (OBSERVABILITY.LOG_DIR, mounted at /var/log/mytube)
+//  2. stdout/stderr of every container in the "mytube" compose project (nginx, postgres, minio, keycloak, ...)
+// UI with the live pipeline graph: http://localhost:12345
+
+// ---- 1. Go app logs -------------------------------------------------------
+local.file_match "mytube_apps" {
+  path_targets = [{"__path__" = "/var/log/mytube/*.log", "job" = "mytube"}]
+}
+
+loki.source.file "mytube_apps" {
+  targets       = local.file_match.mytube_apps.targets
+  forward_to    = [loki.process.mytube_apps.receiver]
+  tail_from_end = true
+}
+
+loki.process "mytube_apps" {
+  stage.json {
+    expressions = {
+      ts      = "ts",
+      level   = "level",
+      service = "service",
+      status  = "status",
+      route   = "route",
+      videoId = "videoId",
+    }
+  }
+  stage.timestamp {
+    source = "ts"
+    format = "RFC3339Nano"
+  }
+  // low-cardinality fields become labels; ids stay in the line (query with | json | videoId="...")
+  stage.labels {
+    values = { level = "", service = "" }
+  }
+  stage.label_drop {
+    values = ["filename"]
+  }
+  forward_to = [loki.write.local.receiver]
+}
+
+// ---- 2. Docker container logs --------------------------------------------
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=mytube"]
+  }
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  relabel_rules = discovery.relabel.containers.rules
+  labels        = { job = "docker" }
+  forward_to    = [loki.write.local.receiver]
+}
+
+// ---- Loki ----------------------------------------------------------------
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

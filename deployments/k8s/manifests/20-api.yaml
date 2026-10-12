@@ -1,0 +1,31 @@
+# config.yaml comes from the mytube-config Secret, rendered by up.sh with the current tunnel hostname
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api, namespace: mytube }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: api } }
+  template:
+    metadata: { labels: { app: api } }
+    spec:
+      containers:
+        - name: api
+          image: mytube-backend:local
+          imagePullPolicy: Never
+          command: ["/app/api", "-config", "/app/configs/config.yaml"]
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:
+            tcpSocket: { port: 8080 }
+            periodSeconds: 5
+          resources: { requests: { memory: 64Mi, cpu: 100m }, limits: { memory: 512Mi } }
+          volumeMounts: [{ name: config, mountPath: /app/configs, readOnly: true }]
+      volumes:
+        - name: config
+          secret: { secretName: mytube-config }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api, namespace: mytube }
+spec:
+  selector: { app: api }
+  ports: [{ port: 8080 }]

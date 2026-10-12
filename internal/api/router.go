@@ -1,18 +1,39 @@
 package api
 
 import (
-	"github.com/ak-ansari/mytube/internal/api/handlers"
+	"time"
+
+	"github.com/ak-ansari/mytube/internal/api/middleware"
+	"github.com/ak-ansari/mytube/internal/api/routes"
+	"github.com/ak-ansari/mytube/internal/auth"
 	"github.com/ak-ansari/mytube/internal/services"
+	"github.com/ak-ansari/mytube/internal/storage"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(service *services.VideoService) *gin.Engine {
+func SetupRouter(videoService *services.VideoService, objectStore storage.ObjectStore, verifier *auth.KeycloakVerifier, userService *services.UserService, catalogService *services.VideoCatalogService, middlewares ...gin.HandlerFunc) *gin.Engine {
 	r := gin.Default()
-	vh := handlers.NewVideoHandler(service)
-
-	r.POST("/videos/upload", vh.UploadVideo)
-	r.GET("/videos/:id", vh.GetVideo)
-	r.GET("/videos/url", vh.GetDownloadUrl)
-
+	// no proxy is trusted, so ClientIP() is the socket peer and X-Forwarded-For can't be spoofed
+	if err := r.SetTrustedProxies(nil); err != nil {
+		panic(err)
+	}
+	// e.g. observability.HTTPMiddleware; registered before the routes so it wraps all of them
+	r.Use(middlewares...)
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:5173"}, // frontend URLs
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+	// reads are public; write routes add middleware.RequireUser()
+	api := r.Group("/api", middleware.Authenticate(verifier, userService))
+	routes.SetupVideoRoutes(api, videoService, catalogService)
+	routes.SetupFileRoutes(api, services.NewFileService(objectStore, catalogService))
+	routes.SetupVideoMetadataRoutes(api, videoService)
+	routes.SetupVideoCatalogRoutes(api, catalogService)
+	routes.SetupUserRoutes(api, userService, catalogService)
 	return r
 }

@@ -1,17 +1,13 @@
 package jobs
 
-type Step string
-
-const (
-	StepValidate  Step = "validate"
-	StepTranscode Step = "transcode"
-	StepSegment   Step = "segment"
-	StepChecksum  Step = "checksum"
-	StepThumbs    Step = "thumbnail"
-	StepPublish   Step = "publish"
-)
+import "github.com/ak-ansari/mytube/internal/models"
 
 type JobPayload struct {
-	VideoID string `json:"videoId"`
-	Step    Step   `json:"step"`
+	VideoID string             `json:"video_id"`
+	Stage   int                `json:"stage"`
+	Status  models.VideoStatus `json:"status"`
+	// Attempt counts earlier failed runs of this stage (0 on the first run); the runner bumps it on retry.
+	Attempt int `json:"attempt,omitempty"`
+	// Resume marks a retry whose stage work already finished but moving on failed: only advance, don't rerun the handler.
+	Resume bool `json:"resume,omitempty"`
 }

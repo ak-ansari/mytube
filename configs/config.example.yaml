@@ -1,0 +1,47 @@
+ENV: dev
+DB:
+  PG_USER: mytube
+  PG_PASS:  mytube
+  PG_DB_NAME: mytube
+  PG_PORT:  "5432"
+  PG_HOST: localhost
+
+REDIS:
+  REDIS_PORT: "6379"
+  REDIS_HOST: "127.0.0.1"
+  REDIS_QUEUE_NAME: video_queue
+
+S3:
+  MINIO_ACCESS_KEY: mytube
+  MINIO_SECRET_KEY: mytube123
+  MINIO_ENDPOINT: localhost:9002
+  MINIO_BUCKET: mytube
+  MINIO_REDIS_QUEUE_NAME: minio-events-queue
+
+SERVER:
+  HTTP_PORT: "8080"
+
+ES:
+  PORT: "9200"
+  HOST: "localhost"
+
+KEYCLOAK:
+  URL: http://localhost:8180
+  REALM: mytube
+  CLIENT_ID: mytube-frontend
+
+STREAM:
+  BASE_URL: http://localhost
+  TOKEN_SECRET: change-me-local-dev-secret
+  TOKEN_TTL: 6h
+
+# optional; these are the defaults
+WORKER:
+  MAX_ATTEMPTS: 4          # total runs of a failing pipeline stage, including the first
+  RETRY_BASE_DELAY: 10s    # doubles per retry
+  RETRY_MAX_DELAY: 5m
+
+# optional; logs + metrics for the Grafana stack (make obs-up). Unset LOG_DIR = console only.
+OBSERVABILITY:
+  LOG_DIR: ./logs          # JSON logs: ./logs/api.log, ./logs/worker.log (tailed by Alloy -> Loki)
+  METRICS_ADDR: ":9091"    # worker /metrics (the API serves :8080/metrics)

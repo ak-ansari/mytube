@@ -4,9 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"path/filepath"
 
 	"github.com/ak-ansari/mytube/internal/config"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
+	"github.com/ak-ansari/mytube/pkg/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -24,7 +25,10 @@ func NewPool(conf *config.Config, l logger.Logger) (*pgxpool.Pool, error) {
 	if err := goose.SetDialect("postgres"); err != nil {
 		return nil, err
 	}
-	dir := "./migrations"
+	dir, err := filepath.Rel("./", "./migrations")
+	if err != nil {
+		l.Error("filepath is not valid", logger.Error(err))
+	}
 
 	if err := goose.RunContext(context.Background(), "up", db, dir); err != nil {
 		return nil, err

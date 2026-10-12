@@ -1,0 +1,417 @@
+/*
+ * myTube login theme — layered on keycloak.v2 (PatternFly 5, dark).
+ * Palette matches the Vue app's myTubeDark theme (src/plugins/vuetify.ts).
+ */
+html.mytube {
+    --mt-bg: #0f0f0f;
+    --mt-card: #181818;
+    --mt-card-border: #2a2a2a;
+    --mt-input: #121212;
+    --mt-input-border: #3a3a3a;
+    --mt-input-border-hover: #5a5a5a;
+    --mt-text: #f1f1f1;
+    --mt-muted: #aaaaaa;
+    --mt-red: #ff0033;
+    --mt-red-hover: #e0002d;
+    --mt-blue: #3ea6ff;
+    --mt-blue-hover: #6cbcff;
+    --mt-radius: 12px;
+
+    --pf-v5-global--FontFamily--text: "Roboto", "Arial", sans-serif;
+    --pf-v5-global--FontFamily--heading: "Roboto", "Arial", sans-serif;
+    --pf-v5-global--FontFamily--redhatfont--text: "Roboto", "Arial", sans-serif;
+    --pf-v5-global--FontFamily--redhatfont--heading: "Roboto", "Arial", sans-serif;
+    --pf-v5-global--Color--100: var(--mt-text);
+    --pf-v5-global--Color--200: var(--mt-muted);
+    --pf-v5-global--link--Color: var(--mt-blue);
+    --pf-v5-global--link--Color--hover: var(--mt-blue-hover);
+    --pf-v5-global--primary-color--100: var(--mt-red);
+    --pf-v5-global--primary-color--200: var(--mt-red-hover);
+    --pf-v5-global--active-color--100: var(--mt-blue);
+    --pf-v5-global--BackgroundColor--100: var(--mt-card);
+    --pf-v5-global--BorderColor--100: var(--mt-card-border);
+
+    color-scheme: dark;
+    background: var(--mt-bg);
+}
+
+/* ---------- page ---------- */
+
+html.mytube body#keycloak-bg {
+    min-height: 100vh;
+    background:
+        radial-gradient(900px 520px at 50% -12%, rgba(255, 0, 51, 0.22), transparent 62%),
+        radial-gradient(700px 480px at 100% 110%, rgba(62, 166, 255, 0.10), transparent 60%),
+        radial-gradient(600px 420px at -10% 100%, rgba(255, 0, 51, 0.08), transparent 60%),
+        var(--mt-bg);
+    background-attachment: fixed;
+    color: var(--mt-text);
+    font-family: "Roboto", "Arial", sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+html.mytube .pf-v5-c-login {
+    --pf-v5-c-login--PaddingTop: 48px;
+    --pf-v5-c-login--PaddingBottom: 48px;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+}
+
+html.mytube .pf-v5-c-login__container {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "header" "main";
+    width: 100%;
+    max-width: 448px;
+    padding-inline: 16px;
+}
+
+/* ---------- brand ---------- */
+
+html.mytube #kc-header {
+    margin-bottom: 28px;
+    padding: 0;
+    justify-content: center;
+}
+
+/* keycloak.v2 uppercases and letter-spaces the realm name in #kc-header-wrapper */
+html.mytube #kc-header-wrapper {
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: inherit;
+}
+
+html.mytube .mytube-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+html.mytube .mytube-wordmark {
+    font-size: 30px;
+    line-height: 1;
+    letter-spacing: -1.2px;
+    color: var(--mt-text);
+}
+
+html.mytube .mytube-wordmark strong {
+    font-weight: 700;
+}
+
+/* ---------- card ---------- */
+
+html.mytube .pf-v5-c-login__main {
+    --pf-v5-c-login__main--BackgroundColor: var(--mt-card);
+    --pf-v5-c-login__main--BoxShadow: none;
+    --pf-v5-c-login__main-header--PaddingTop: 36px;
+    --pf-v5-c-login__main-header--PaddingRight: 36px;
+    --pf-v5-c-login__main-header--PaddingLeft: 36px;
+    --pf-v5-c-login__main-header--PaddingBottom: 20px;
+    --pf-v5-c-login__main-body--PaddingRight: 36px;
+    --pf-v5-c-login__main-body--PaddingLeft: 36px;
+    --pf-v5-c-login__main-body--PaddingBottom: 28px;
+    --pf-v5-c-login__main-footer-band--BorderTopColor: var(--mt-card-border);
+    border: 1px solid var(--mt-card-border);
+    border-radius: 20px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+    overflow: hidden;
+    margin-bottom: 0;
+}
+
+html.mytube .pf-v5-c-login__main-header {
+    border-top: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    text-align: center;
+}
+
+html.mytube #kc-page-title {
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--mt-text);
+}
+
+html.mytube .mytube-subtitle {
+    margin: 2px 0 0;
+    font-size: 15px;
+    color: var(--mt-muted);
+}
+
+/* ---------- form ---------- */
+
+html.mytube .pf-v5-c-form {
+    --pf-v5-c-form--GridGap: 18px;
+}
+
+html.mytube .pf-v5-c-form__label-text,
+html.mytube .pf-v5-c-form__label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #e5e5e5;
+}
+
+html.mytube .pf-v5-c-form__label-required {
+    color: var(--mt-red);
+}
+
+html.mytube .pf-v5-c-form-control {
+    --pf-v5-c-form-control--BackgroundColor: var(--mt-input);
+    --pf-v5-c-form-control--Color: var(--mt-text);
+    --pf-v5-c-form-control--before--BorderTopColor: var(--mt-input-border);
+    --pf-v5-c-form-control--before--BorderRightColor: var(--mt-input-border);
+    --pf-v5-c-form-control--before--BorderLeftColor: var(--mt-input-border);
+    --pf-v5-c-form-control--before--BorderBottomColor: var(--mt-input-border);
+    --pf-v5-c-form-control--before--BorderBottomWidth: 1px;
+    --pf-v5-c-form-control--after--BorderBottomWidth: 0;
+    --pf-v5-c-form-control--hover--after--BorderBottomWidth: 0;
+    --pf-v5-c-form-control--PaddingTop: 11px;
+    --pf-v5-c-form-control--PaddingBottom: 11px;
+    border-radius: var(--mt-radius);
+    transition: box-shadow 0.15s ease;
+}
+
+html.mytube .pf-v5-c-form-control::before,
+html.mytube .pf-v5-c-form-control::after {
+    border-radius: var(--mt-radius);
+}
+
+html.mytube .pf-v5-c-form-control:hover {
+    --pf-v5-c-form-control--before--BorderTopColor: var(--mt-input-border-hover);
+    --pf-v5-c-form-control--before--BorderRightColor: var(--mt-input-border-hover);
+    --pf-v5-c-form-control--before--BorderLeftColor: var(--mt-input-border-hover);
+    --pf-v5-c-form-control--before--BorderBottomColor: var(--mt-input-border-hover);
+}
+
+html.mytube .pf-v5-c-form-control:focus-within {
+    --pf-v5-c-form-control--before--BorderTopColor: var(--mt-blue);
+    --pf-v5-c-form-control--before--BorderRightColor: var(--mt-blue);
+    --pf-v5-c-form-control--before--BorderLeftColor: var(--mt-blue);
+    --pf-v5-c-form-control--before--BorderBottomColor: var(--mt-blue);
+    box-shadow: 0 0 0 3px rgba(62, 166, 255, 0.22);
+}
+
+html.mytube .pf-v5-c-form-control.pf-m-error {
+    --pf-v5-c-form-control--before--BorderTopColor: #ff4e45;
+    --pf-v5-c-form-control--before--BorderRightColor: #ff4e45;
+    --pf-v5-c-form-control--before--BorderLeftColor: #ff4e45;
+    --pf-v5-c-form-control--before--BorderBottomColor: #ff4e45;
+}
+
+html.mytube .pf-v5-c-form-control > input,
+html.mytube .pf-v5-c-form-control > select {
+    font-size: 15px;
+    outline: none;
+}
+
+/* keep Chrome's autofill from painting the inputs light yellow */
+html.mytube .pf-v5-c-form-control > input:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px var(--mt-input) inset;
+    -webkit-text-fill-color: var(--mt-text);
+    caret-color: var(--mt-text);
+}
+
+/* show/hide password button sits inside the input group */
+html.mytube .pf-v5-c-input-group {
+    border-radius: var(--mt-radius);
+}
+
+html.mytube .pf-v5-c-input-group .pf-v5-c-button.pf-m-control {
+    --pf-v5-c-button--m-control--BackgroundColor: var(--mt-input);
+    --pf-v5-c-button--m-control--Color: var(--mt-muted);
+    --pf-v5-c-button--m-control--after--BorderTopColor: var(--mt-input-border);
+    --pf-v5-c-button--m-control--after--BorderRightColor: var(--mt-input-border);
+    --pf-v5-c-button--m-control--after--BorderBottomColor: var(--mt-input-border);
+    --pf-v5-c-button--m-control--after--BorderLeftColor: var(--mt-input-border);
+    border-radius: 0 var(--mt-radius) var(--mt-radius) 0;
+}
+
+html.mytube .pf-v5-c-input-group .pf-v5-c-button.pf-m-control::after {
+    border-radius: 0 var(--mt-radius) var(--mt-radius) 0;
+}
+
+html.mytube .pf-v5-c-input-group > .pf-v5-c-input-group__item:first-child .pf-v5-c-form-control,
+html.mytube .pf-v5-c-input-group > .pf-v5-c-input-group__item:first-child .pf-v5-c-form-control::before {
+    border-radius: var(--mt-radius) 0 0 var(--mt-radius);
+}
+
+html.mytube .pf-v5-c-helper-text__item.pf-m-error,
+html.mytube .kc-feedback-text.pf-m-error {
+    color: #ff6b63;
+}
+
+/* checkbox + "forgot password" row */
+html.mytube .pf-v5-c-check__label {
+    color: var(--mt-muted);
+    font-size: 14px;
+}
+
+html.mytube .pf-v5-c-check__input {
+    accent-color: var(--mt-blue);
+    width: 16px;
+    height: 16px;
+}
+
+/* "* Required fields" note on the registration page */
+html.mytube .pf-v5-c-login__main-body > div > .subtitle {
+    font-size: 12px;
+    color: var(--mt-muted);
+    margin-bottom: 4px;
+}
+
+/* registration: first + last name side by side */
+html.mytube #kc-register-form {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 14px;
+}
+
+html.mytube #kc-register-form > * {
+    grid-column: 1 / -1;
+}
+
+html.mytube #kc-register-form > .pf-v5-c-form__group:has(#firstName),
+html.mytube #kc-register-form > .pf-v5-c-form__group:has(#lastName) {
+    grid-column: auto;
+}
+
+@media (max-width: 420px) {
+    html.mytube #kc-register-form > .pf-v5-c-form__group:has(#firstName),
+    html.mytube #kc-register-form > .pf-v5-c-form__group:has(#lastName) {
+        grid-column: 1 / -1;
+    }
+}
+
+/* ---------- buttons ---------- */
+
+html.mytube .pf-v5-c-button {
+    --pf-v5-c-button--BorderRadius: 999px;
+    --pf-v5-c-button--after--BorderRadius: 999px;
+    --pf-v5-c-button--FontWeight: 500;
+    font-family: "Roboto", "Arial", sans-serif;
+}
+
+html.mytube .pf-v5-c-button.pf-m-primary {
+    --pf-v5-c-button--m-primary--BackgroundColor: var(--mt-red);
+    --pf-v5-c-button--m-primary--hover--BackgroundColor: var(--mt-red-hover);
+    --pf-v5-c-button--m-primary--focus--BackgroundColor: var(--mt-red-hover);
+    --pf-v5-c-button--m-primary--active--BackgroundColor: var(--mt-red-hover);
+    --pf-v5-c-button--m-primary--Color: #fff;
+    --pf-v5-c-button--m-primary--hover--Color: #fff;
+    --pf-v5-c-button--PaddingTop: 12px;
+    --pf-v5-c-button--PaddingBottom: 12px;
+    font-size: 15px;
+    letter-spacing: 0.2px;
+    box-shadow: 0 8px 24px rgba(255, 0, 51, 0.28);
+    transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+}
+
+html.mytube .pf-v5-c-button.pf-m-primary:hover {
+    box-shadow: 0 10px 28px rgba(255, 0, 51, 0.38);
+}
+
+html.mytube .pf-v5-c-button.pf-m-primary:active {
+    transform: translateY(1px);
+}
+
+html.mytube .pf-v5-c-button.pf-m-primary:disabled {
+    opacity: 0.6;
+    box-shadow: none;
+}
+
+html.mytube .pf-v5-c-button.pf-m-secondary {
+    --pf-v5-c-button--m-secondary--BackgroundColor: #272727;
+    --pf-v5-c-button--m-secondary--hover--BackgroundColor: #3f3f3f;
+    --pf-v5-c-button--m-secondary--Color: var(--mt-text);
+    --pf-v5-c-button--m-secondary--hover--Color: var(--mt-text);
+    --pf-v5-c-button--m-secondary--after--BorderColor: transparent;
+    --pf-v5-c-button--m-secondary--hover--after--BorderColor: transparent;
+}
+
+html.mytube .pf-v5-c-button.pf-m-link {
+    --pf-v5-c-button--m-link--Color: var(--mt-blue);
+    --pf-v5-c-button--m-link--hover--Color: var(--mt-blue-hover);
+}
+
+html.mytube a {
+    color: var(--mt-blue);
+    font-weight: 500;
+    text-decoration: none;
+}
+
+html.mytube a:hover {
+    color: var(--mt-blue-hover);
+    text-decoration: underline;
+}
+
+/* ---------- footer band ("New to myTube? Create account") ---------- */
+
+html.mytube .pf-v5-c-login__main-footer-band {
+    --pf-v5-c-login__main-footer-band--BackgroundColor: transparent;
+    font-size: 14px;
+    color: var(--mt-muted);
+}
+
+html.mytube #kc-info {
+    margin-top: 28px;
+    padding-top: 22px;
+}
+
+html.mytube .pf-v5-c-login__main-footer-band:first-child {
+    margin-block-start: 0;
+}
+
+/* ---------- alerts ---------- */
+
+html.mytube .pf-v5-c-alert {
+    --pf-v5-c-alert--BackgroundColor: #1f1f1f;
+    --pf-v5-c-alert--BoxShadow: none;
+    border-radius: var(--mt-radius);
+    border: 1px solid var(--mt-card-border);
+}
+
+html.mytube .pf-v5-c-alert.pf-m-danger {
+    background: rgba(255, 78, 69, 0.1);
+    border-color: rgba(255, 78, 69, 0.35);
+}
+
+html.mytube .pf-v5-c-alert.pf-m-success {
+    background: rgba(43, 166, 64, 0.1);
+    border-color: rgba(43, 166, 64, 0.35);
+}
+
+/* ---------- page footer ---------- */
+
+html.mytube .mytube-footer {
+    margin: 24px 0 0;
+    text-align: center;
+    font-size: 12px;
+    color: #717171;
+}
+
+/* ---------- small screens ---------- */
+
+@media (max-width: 520px) {
+    html.mytube .pf-v5-c-login {
+        --pf-v5-c-login--PaddingTop: 24px;
+        align-items: flex-start;
+    }
+
+    html.mytube .pf-v5-c-login__main {
+        --pf-v5-c-login__main-header--PaddingTop: 28px;
+        --pf-v5-c-login__main-header--PaddingRight: 22px;
+        --pf-v5-c-login__main-header--PaddingLeft: 22px;
+        --pf-v5-c-login__main-body--PaddingRight: 22px;
+        --pf-v5-c-login__main-body--PaddingLeft: 22px;
+    }
+
+    html.mytube #kc-page-title {
+        font-size: 22px;
+    }
+}

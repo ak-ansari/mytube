@@ -21,4 +21,9 @@ type Cache interface {
 	Get(ctx context.Context, key string, target any) error
 	Delete(ctx context.Context, key string) error
 	Exists(ctx context.Context, key string) (bool, error)
+	GetAllFromHash(ctx context.Context, hash string) (map[string]string, error)
+	GetFromHash(ctx context.Context, hash string, key string) (string, error)
+	DeleteFromHash(ctx context.Context, hash string, key string) error
+	SetNX(ctx context.Context, key string, value any, expiration time.Duration) (bool, error)
+	DeleteLock(ctx context.Context, key string) error
 }

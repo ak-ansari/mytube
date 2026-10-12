@@ -7,11 +7,12 @@ import (
 )
 
 type VideoRepository interface {
-	InsertBasic(ctx context.Context, v models.Video) error
-	UpdateMeta(ctx context.Context, videoId string, sha string, dur int, vcodec, acodec string, w, h int, status models.VideoStatus) error
-	UpdateStatus(ctx context.Context, videoId string, status models.VideoStatus) error
-	UpdateQualities(ctx context.Context, videoId string, qualities []string, status models.VideoStatus) error
-	UpdateManifest(ctx context.Context, videoId string, manifest string) error
-	UpdateThumbnail(ctx context.Context, videoId string, thumbnailKey string) error
-	Get(ctx context.Context, videoId string) (*models.Video, error)
+	InsertBasic(ctx context.Context, vm *models.Video) error
+	UpdateVideo(ctx context.Context, vm *models.Video) error
+	Get(ctx context.Context, id string) (*models.Video, error)
+	GetByIds(ctx context.Context, id []string) ([]*models.Video, error)
+	UpdateState(ctx context.Context, videoId string, stage int, status models.VideoStatus) error
+	// AdvanceState moves the video from fromStage to toStage only if it is still at fromStage (and not failed).
+	// It reports whether a row was updated, so concurrent callers advance a stage at most once.
+	AdvanceState(ctx context.Context, videoId string, fromStage, toStage int, status models.VideoStatus) (bool, error)
 }

@@ -10,10 +10,9 @@ import (
 
 	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/media"
-	"github.com/ak-ansari/mytube/internal/models"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
+	"github.com/ak-ansari/mytube/pkg/logger"
 )
 
 type Validate struct {
@@ -33,7 +32,7 @@ func NewValidate(service *services.VideoService, store storage.ObjectStore, ffm 
 }
 
 // Handle validates a video file
-func (c *Validate) Handle(ctx context.Context, p jobs.JobPayload) error {
+func (c *Validate) Handle(ctx context.Context, p *jobs.JobPayload) error {
 	c.log.Info("Validation started",
 		logger.String("videoId", p.VideoID))
 
@@ -45,13 +44,31 @@ func (c *Validate) Handle(ctx context.Context, p jobs.JobPayload) error {
 		return err
 	}
 
-	f, _, err := c.store.Get(ctx, key)
+	meta, err := c.service.GetMeta(ctx, p.VideoID)
+	if err != nil {
+		c.log.Error("Failed to get video metadata",
+			logger.String("videoId", p.VideoID),
+			logger.Error(err))
+		return err
+	}
+
+	f, size, err := c.store.Get(ctx, key)
 	if err != nil {
 		c.log.Error("Failed to get file from store",
 			logger.String("videoId", p.VideoID),
 			logger.String("key", key),
 			logger.Error(err))
 		return err
+	}
+	defer f.Close()
+
+	// the presigned PUT doesn't enforce the size declared at presign time
+	if size > meta.Size {
+		c.log.Error("Uploaded file is larger than declared",
+			logger.String("videoId", p.VideoID),
+			logger.Int64("actual", size),
+			logger.Int64("declared", meta.Size))
+		return jobs.Permanent(fmt.Errorf("uploaded file size %d exceeds declared size %d", size, meta.Size))
 	}
 
 	temp, err := os.CreateTemp("", "video-*")
@@ -106,13 +123,19 @@ func (c *Validate) Handle(ctx context.Context, p jobs.JobPayload) error {
 		}
 	}
 
+	if vcodec == "" {
+		c.log.Error("No video stream found",
+			logger.String("videoId", p.VideoID))
+		return jobs.Permanent(fmt.Errorf("no video stream found in uploaded file"))
+	}
+
 	if pr.Format.Duration != "" {
 		if d, err := parseDur(pr.Format.Duration); err == nil && d > 0 {
 			dur = d
 		}
 	}
 
-	if err := c.service.UpdateMeta(ctx, p.VideoID, sum, dur, vcodec, acodec, wpx, hpx, models.StatusValid); err != nil {
+	if err := c.service.UpdateMeta(ctx, p.VideoID, sum, dur, vcodec, acodec, wpx, hpx); err != nil {
 		c.log.Error("Failed to update video metadata",
 			logger.String("videoId", p.VideoID),
 			logger.Error(err))

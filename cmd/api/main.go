@@ -1,19 +1,26 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/ak-ansari/mytube/internal/api"
+	"github.com/ak-ansari/mytube/internal/auth"
 	redisCache "github.com/ak-ansari/mytube/internal/cache/redis"
 	"github.com/ak-ansari/mytube/internal/config"
 	"github.com/ak-ansari/mytube/internal/db"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
-	client "github.com/ak-ansari/mytube/internal/pkg/redis"
+	elasticsearch_index "github.com/ak-ansari/mytube/internal/index/elasticsearch"
+	"github.com/ak-ansari/mytube/internal/observability"
 	redisQueue "github.com/ak-ansari/mytube/internal/queue/redis"
 	"github.com/ak-ansari/mytube/internal/repository/postgres"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
+	"github.com/ak-ansari/mytube/internal/stream"
+	"github.com/ak-ansari/mytube/pkg/elastic"
+	"github.com/ak-ansari/mytube/pkg/logger"
+	client "github.com/ak-ansari/mytube/pkg/redis"
 )
 
 func main() {
@@ -25,23 +32,31 @@ func main() {
 	}
 
 	// Initialize logger
-	logr, err := logger.NewZapLogger(conf.Env)
+	logr, err := logger.NewZapLoggerWithFile(conf.Env, "api", logFile(conf.Observability.LogDir, "api"))
 	if err != nil {
 		log.Fatal(err)
 
 	}
 	defer logr.Flush()
-
 	// DB pool
 	dbPool, err := db.NewPool(conf, logr)
 	if err != nil {
 		logr.Fatal("failed to init db pool", logger.Error(err))
 	}
+	observability.RegisterDBCollector(dbPool, "api", false)
 
 	// Redis client
 	client := client.NewRedisClient(&conf.Redis)
 	queue := redisQueue.NewRedisQ(client)
 	cache := redisCache.NewRedisCache(client)
+	esClient, err := elastic.NewEsClient(conf)
+	if err != nil {
+		logr.Fatal("failed to connect with elastic search client", logger.Error(err))
+	}
+	videoIndex, err := elasticsearch_index.NewVideoEsIndex(esClient)
+	if err != nil {
+		logr.Fatal("failed to init video index", logger.Error(err))
+	}
 
 	// Object store
 	objStore, err := storage.NewS3Store(logr)
@@ -51,15 +66,39 @@ func main() {
 	}
 
 	// Repository + Service
-	repo := postgres.NewVideoRepo(dbPool)
-	service := services.NewVideoService(objStore, repo, queue, cache, conf.Redis.RedisQueueName)
+	videoMetadataRepo := postgres.NewVideoMetadataRepo(dbPool)
+	videoRepo := postgres.NewVideoRepo(dbPool)
+	stateMachine := services.NewVideoStateMachine()
+	pipelineCoordinator := services.NewPipelineCoordinator(videoRepo, stateMachine, queue, conf.Redis.RedisQueueName)
+	service := services.NewVideoService(videoIndex, objStore, videoMetadataRepo, videoRepo, queue, cache, conf.Redis.RedisQueueName, stateMachine, pipelineCoordinator)
+
+	// Users, catalog + Keycloak auth
+	verifier, err := auth.NewKeycloakVerifier(context.Background(), conf.Keycloak)
+	if err != nil {
+		logr.Fatal("failed to init keycloak verifier", logger.Error(err))
+	}
+	streamSigner, err := stream.NewSigner(conf.Stream)
+	if err != nil {
+		logr.Fatal("failed to init stream signer", logger.Error(err))
+	}
+	userService := services.NewUserService(postgres.NewUserRepo(dbPool), objStore)
+	catalogService := services.NewVideoCatalogService(postgres.NewVideoCatalogRepo(dbPool), postgres.NewCommentRepo(dbPool), videoIndex, objStore, cache, streamSigner)
 
 	// Setup router
-	r := api.SetupRouter(service)
+	r := api.SetupRouter(service, objStore, verifier, userService, catalogService, observability.HTTPMiddleware(logr))
+	r.GET("/metrics", observability.MetricsHandler())
 	logr.Info("starting server", logger.String("port", conf.Server.HttpPort))
 	logr.Info("Application is Running in ", logger.String("env", conf.Env))
 	if err := r.Run(":" + conf.Server.HttpPort); err != nil {
 		logr.Error("server exited with error", logger.Any("error", err))
 		os.Exit(1)
 	}
+}
+
+// logFile is <dir>/<name>.log, or "" (no file sink) when dir is unset.
+func logFile(dir, name string) string {
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, name+".log")
 }

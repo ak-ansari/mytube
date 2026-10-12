@@ -8,10 +8,10 @@ import (
 
 	"github.com/ak-ansari/mytube/internal/jobs"
 	"github.com/ak-ansari/mytube/internal/media"
-	"github.com/ak-ansari/mytube/internal/pkg/logger"
 	"github.com/ak-ansari/mytube/internal/services"
 	"github.com/ak-ansari/mytube/internal/storage"
 	"github.com/ak-ansari/mytube/internal/util"
+	"github.com/ak-ansari/mytube/pkg/logger"
 )
 
 type Segment struct {
@@ -30,7 +30,7 @@ func NewSegment(service *services.VideoService, store storage.ObjectStore, ffm *
 	}
 }
 
-func (s *Segment) Handle(ctx context.Context, payload jobs.JobPayload) error {
+func (s *Segment) Handle(ctx context.Context, payload *jobs.JobPayload) error {
 	s.log.Info("Segment processing started",
 		logger.String("videoId", payload.VideoID))
 
@@ -43,15 +43,21 @@ func (s *Segment) Handle(ctx context.Context, payload jobs.JobPayload) error {
 		return err
 	}
 
+	if len(v.AvailableQualities) == 0 {
+		s.log.Error("No transcoded qualities to segment",
+			logger.String("videoId", payload.VideoID))
+		return jobs.Permanent(fmt.Errorf("video %s has no available qualities", payload.VideoID))
+	}
+
 	// get quality to metadata mapping
 	qualityMap := util.GetQualityMap()
 
 	// directories to work with
 	remoteDir := s.service.GetHlsDir(payload.VideoID)
-	tempDir := filepath.Join(os.TempDir(), payload.VideoID)
-	if err := os.MkdirAll(tempDir, 0o755); err != nil {
+	tempDir, err := os.MkdirTemp("", "mytube-segment-"+payload.VideoID+"-*")
+	if err != nil {
 		s.log.Error("Failed to create temp dir",
-			logger.String("path", tempDir),
+			logger.String("videoId", payload.VideoID),
 			logger.Error(err))
 		return err
 	}
@@ -67,7 +73,7 @@ func (s *Segment) Handle(ctx context.Context, payload jobs.JobPayload) error {
 			logger.String("quality", quality))
 
 		q := qualityMap[quality]
-		if err := s.createSegments(ctx, tempDir, v.Filename, payload.VideoID, quality); err != nil {
+		if err := s.createSegments(ctx, tempDir, payload.VideoID, quality); err != nil {
 			s.log.Error("Failed to create segments",
 				logger.String("videoId", payload.VideoID),
 				logger.String("quality", quality),
@@ -111,9 +117,8 @@ func (s *Segment) Handle(ctx context.Context, payload jobs.JobPayload) error {
 	return nil
 }
 
-func (s *Segment) createSegments(ctx context.Context, tempDir, originalName, id, quality string) error {
-	ext := filepath.Ext(originalName)
-	key := s.service.GetTranscodingPath(id, quality, ext)
+func (s *Segment) createSegments(ctx context.Context, tempDir, id, quality string) error {
+	key := s.service.GetTranscodingPath(id, quality)
 	url, err := s.service.GetDownloadUrl(ctx, key)
 	if err != nil {
 		return err

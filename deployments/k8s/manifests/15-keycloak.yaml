@@ -1,0 +1,49 @@
+# Dev mode (embedded H2 on a PVC) under /kc. No fixed hostname: issuer = https://<tunnel host>/kc/realms/mytube,
+# derived from the X-Forwarded-* headers the edge sets.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: keycloak-data, namespace: mytube }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: keycloak, namespace: mytube }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: keycloak } }
+  template:
+    metadata: { labels: { app: keycloak } }
+    spec:
+      containers:
+        - name: keycloak
+          image: mytube-keycloak:local
+          imagePullPolicy: Never
+          args: ["start-dev", "--import-realm", "--http-port=8080"]
+          env:
+            - { name: KC_HTTP_RELATIVE_PATH, value: /kc }
+            - { name: KC_PROXY_HEADERS, value: xforwarded }
+            - { name: KC_HOSTNAME_STRICT, value: "false" }
+            - { name: KC_HEALTH_ENABLED, value: "true" }
+            - { name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin }
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: mytube-secrets, key: KEYCLOAK_ADMIN_PASSWORD } }
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:
+            httpGet: { path: /kc/health/ready, port: 9000 }
+            periodSeconds: 10
+            failureThreshold: 30
+          resources: { requests: { memory: 512Mi, cpu: 200m }, limits: { memory: 1536Mi } }
+          volumeMounts: [{ name: data, mountPath: /opt/keycloak/data/h2 }]
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: keycloak-data }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: keycloak, namespace: mytube }
+spec:
+  selector: { app: keycloak }
+  ports: [{ port: 8080 }]
