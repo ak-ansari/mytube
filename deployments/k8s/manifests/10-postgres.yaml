@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: postgres-data, namespace: mytube }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 5Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: postgres, namespace: mytube }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15
+          env:
+            - { name: POSTGRES_USER, value: mytube }
+            - { name: POSTGRES_DB, value: mytube }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: mytube-secrets, key: PG_PASSWORD } }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports: [{ containerPort: 5432 }]
+          readinessProbe:
+            exec: { command: [pg_isready, -U, mytube] }
+            periodSeconds: 5
+          resources: { requests: { memory: 128Mi, cpu: 100m }, limits: { memory: 512Mi } }
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: postgres-data }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: postgres, namespace: mytube }
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432 }]

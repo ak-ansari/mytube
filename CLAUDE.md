@@ -1,7 +1,7 @@
 # MyTube — Backend (Go)
 
 Learning project: a bare-minimum YouTube clone. This repo is the API + media-processing worker.
-Frontend lives in the sibling repo `../mytube-frontend` (Vue 3) and talks to this API at `http://localhost:8080`.
+Frontend lives in `web/` (Vue 3) and talks to this API at `http://localhost:8080`.
 
 ## Ground rules for changes
 

@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: minio-data, namespace: mytube }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 20Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: minio, namespace: mytube }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: minio } }
+  template:
+    metadata: { labels: { app: minio } }
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest   # no longer on Docker Hub; up.sh loads your local copy
+          imagePullPolicy: Never
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom: { secretKeyRef: { name: mytube-secrets, key: MINIO_USER } }
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: mytube-secrets, key: MINIO_PASSWORD } }
+            # bucket events -> Redis hash the worker reads (S3.MINIO_REDIS_QUEUE_NAME)
+            - { name: MINIO_NOTIFY_REDIS_ENABLE_primary, value: "on" }
+            - { name: MINIO_NOTIFY_REDIS_ADDRESS_primary, value: "redis:6379" }
+            - { name: MINIO_NOTIFY_REDIS_KEY_primary, value: minio-events-queue }
+            - { name: MINIO_NOTIFY_REDIS_FORMAT_primary, value: namespace }
+          ports: [{ containerPort: 9000 }, { containerPort: 9001 }]
+          readinessProbe:
+            httpGet: { path: /minio/health/ready, port: 9000 }
+            periodSeconds: 5
+          resources: { requests: { memory: 128Mi, cpu: 100m }, limits: { memory: 1Gi } }
+          volumeMounts: [{ name: data, mountPath: /data }]
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: minio-data }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: minio, namespace: mytube }
+spec:
+  selector: { app: minio }
+  ports:
+    - { name: s3, port: 9000 }
+    - { name: console, port: 9001 }

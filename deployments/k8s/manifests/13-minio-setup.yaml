@@ -1,0 +1,30 @@
+# Idempotent bucket setup (the k8s version of `make setup-bucket` + the originals/ event rule).
+apiVersion: batch/v1
+kind: Job
+metadata: { name: minio-setup, namespace: mytube }
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/minio:latest   # ships mc
+          imagePullPolicy: Never
+          env:
+            - name: MINIO_USER
+              valueFrom: { secretKeyRef: { name: mytube-secrets, key: MINIO_USER } }
+            - name: MINIO_PASSWORD
+              valueFrom: { secretKeyRef: { name: mytube-secrets, key: MINIO_PASSWORD } }
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              until mc alias set local http://minio:9000 "$MINIO_USER" "$MINIO_PASSWORD"; do sleep 3; done
+              mc mb --ignore-existing local/mytube
+              mc anonymous set none local/mytube
+              mc anonymous set download local/mytube/segments/
+              mc event add local/mytube arn:minio:sqs::primary:redis --event put,delete --prefix originals/ \
+                || echo "event rule already present"
+              mc event ls local/mytube

@@ -66,9 +66,10 @@ type EventRecord struct {
 }
 
 type S3Store struct {
-	client *minio.Client
-	bucket string
-	log    logger.Logger // use your interface, not *zap.Logger directly
+	client    *minio.Client
+	presigner *minio.Client // signs browser-facing URLs; same as client unless S3.MINIO_PUBLIC_ENDPOINT is set
+	bucket    string
+	log       logger.Logger // use your interface, not *zap.Logger directly
 }
 
 func NewS3Store(log logger.Logger) (*S3Store, error) {
@@ -86,6 +87,19 @@ func NewS3Store(log logger.Logger) (*S3Store, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Presigning is offline (Region is fixed), so this client only decides the host the URLs carry.
+	presigner := client
+	if s3Conf.MinioPublicEndpoint != "" {
+		presigner, err = minio.New(s3Conf.MinioPublicEndpoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(s3Conf.MinioAccessKey, s3Conf.MinioSecretKey, ""),
+			Secure: s3Conf.MinioPublicSecure,
+			Region: "us-east-1",
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	ctx := context.Background()
@@ -110,9 +124,10 @@ func NewS3Store(log logger.Logger) (*S3Store, error) {
 		logger.String("bucket", s3Conf.MinioBucket))
 
 	s3 := &S3Store{
-		client: client,
-		bucket: s3Conf.MinioBucket,
-		log:    log,
+		client:    client,
+		presigner: presigner,
+		bucket:    s3Conf.MinioBucket,
+		log:       log,
 	}
 	return s3, nil
 }
@@ -135,7 +150,7 @@ func (s3 *S3Store) Put(ctx context.Context, fileId string, key string, file io.R
 	return res.Key, nil
 }
 func (s3 *S3Store) GerPreSignedPutUrl(ctx context.Context, key string, size int64) (string, error) {
-	res, err := s3.client.PresignedPutObject(ctx, s3.bucket, key, 60*time.Minute)
+	res, err := s3.presigner.PresignedPutObject(ctx, s3.bucket, key, 60*time.Minute)
 	if err != nil {
 		s3.log.Error("Failed to sign put object",
 			logger.String("key", key),
@@ -185,7 +200,7 @@ func (s3 *S3Store) Delete(ctx context.Context, key string) error {
 }
 
 func (s3 *S3Store) GetUrl(ctx context.Context, key string) (string, error) {
-	url, err := s3.client.PresignedGetObject(ctx, s3.bucket, key, 12*time.Hour, nil)
+	url, err := s3.presigner.PresignedGetObject(ctx, s3.bucket, key, 12*time.Hour, nil)
 	if err != nil {
 		s3.log.Error("Failed to generate presigned URL",
 			logger.String("key", key),

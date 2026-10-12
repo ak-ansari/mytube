@@ -33,6 +33,9 @@ type S3 struct {
 	MinioEndpoint       string `yaml:"MINIO_ENDPOINT"`
 	MinioBucket         string `yaml:"MINIO_BUCKET"`
 	MinioRedisQueueName string `yaml:"MINIO_REDIS_QUEUE_NAME"`
+	// Optional public origin that presigned URLs point at (e.g. behind a tunnel/ingress); empty = MINIO_ENDPOINT
+	MinioPublicEndpoint string `yaml:"MINIO_PUBLIC_ENDPOINT"`
+	MinioPublicSecure   bool   `yaml:"MINIO_PUBLIC_SECURE"` // https for MINIO_PUBLIC_ENDPOINT
 }
 type ES struct {
 	EsPort string `yaml:"PORT"`
