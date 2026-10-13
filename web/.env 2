@@ -1,0 +1,5 @@
+# .env
+VITE_API_BASE_URL=http://localhost:8080
+VITE_KEYCLOAK_URL=http://localhost:8180
+VITE_KEYCLOAK_REALM=mytube
+VITE_KEYCLOAK_CLIENT_ID=mytube-frontend

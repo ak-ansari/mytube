@@ -1,0 +1,63 @@
+# Single public entrypoint behind the Cloudflare tunnel. Rendered by the nginx image's envsubst
+# (only ${VIDEO_TOKEN_SECRET} and ${MINIO_BUCKET}; nginx's own $variables are left alone).
+#   /videos/<token>/...  HLS gateway (secure_link)      /${MINIO_BUCKET}/...  presigned S3 (path-style)
+#   /api/...             Go API                          /kc/...               Keycloak
+#   everything else      Vue SPA
+
+map $args $mytube_presigned {
+    ~(^|&)X-Amz-Signature=  1;
+    default                 0;
+}
+
+server {
+    listen 80;
+    client_max_body_size 10G;
+    # resolve upstreams per request (via variables) so nginx starts even if a Service doesn't exist yet
+    resolver kube-dns.kube-system.svc.cluster.local valid=10s;
+    set $minio    minio.mytube.svc.cluster.local:9000;
+    set $api      api.mytube.svc.cluster.local:8080;
+    set $keycloak keycloak.mytube.svc.cluster.local:8080;
+    set $frontend frontend.mytube.svc.cluster.local:80;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+
+    location ~ "^/videos/(?<vt>[A-Za-z0-9_-]{22})/(?<ve>[0-9]+)/(?<vid>[0-9a-f-]{36})/(?<vfile>[A-Za-z0-9_.-]+\.(m3u8|ts))$" {
+        secure_link $vt,$ve;
+        secure_link_md5 "$secure_link_expires:$vid:${VIDEO_TOKEN_SECRET}";
+        if ($secure_link = "") { return 403; }
+        if ($secure_link = "0") { return 410; }
+        rewrite ^ /${MINIO_BUCKET}/segments/$vid/$vfile break;
+        proxy_pass http://$minio;
+        proxy_set_header Host minio:9000;
+        add_header Cache-Control "private, max-age=3600" always;
+    }
+
+    # only SigV4-presigned requests; the Host header must stay the public one the URL was signed for
+    location /${MINIO_BUCKET}/ {
+        if ($mytube_presigned = 0) { return 403; }
+        proxy_pass http://$minio;
+        proxy_set_header Host $http_host;
+        proxy_request_buffering off;
+        proxy_buffering off;
+    }
+
+    location /api/ {
+        proxy_pass http://$api;
+        proxy_set_header Host $http_host;
+    }
+
+    location /kc/ {
+        proxy_pass http://$keycloak;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;   # TLS ends at Cloudflare
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+    }
+
+    location / {
+        proxy_pass http://$frontend;
+    }
+}

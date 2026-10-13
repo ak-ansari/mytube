@@ -1,0 +1,32 @@
+# nginx: path router + HLS secure_link gateway + presigned-S3 filter (config: edge.conf.template -> ConfigMap edge-conf)
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: edge, namespace: mytube }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: edge } }
+  template:
+    metadata: { labels: { app: edge } }
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27
+          env:
+            - { name: MINIO_BUCKET, value: mytube }
+            - name: VIDEO_TOKEN_SECRET
+              valueFrom: { secretKeyRef: { name: mytube-secrets, key: VIDEO_TOKEN_SECRET } }
+          ports: [{ containerPort: 80 }]
+          resources: { requests: { memory: 16Mi, cpu: 20m }, limits: { memory: 128Mi } }
+          volumeMounts: [{ name: templates, mountPath: /etc/nginx/templates, readOnly: true }]
+      volumes:
+        - name: templates
+          configMap:
+            name: edge-conf
+            items: [{ key: edge.conf.template, path: default.conf.template }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: edge, namespace: mytube }
+spec:
+  selector: { app: edge }
+  ports: [{ port: 80 }]
